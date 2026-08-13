@@ -1,16 +1,28 @@
 import { useState, lazy, Suspense } from 'react';
 
+const DocsPage = lazy(() => import('./DocsPage'));
+
 const features = [
   { icon: '🎮', title: 'Browser Game', desc: 'A complete Pong:Rush built on the TS engine port — particles, AI, screen shake, slow-mo.', cta: 'Play Pong:Rush' },
+  { icon: '📚', title: 'Documentation', desc: 'TD scripting language, C++ engine API, TypeScript port, example games, editor, CI — all in the docs.', cta: 'Read the docs' },
   { icon: '🎨', title: '2D Renderer', desc: 'WebGL2 SpriteBatch with rotation, color tint, alpha — same shaders as the C++ engine.' },
   { icon: '🧩', title: 'ECS Architecture', desc: 'World / Entity / Component / System with bit-mask queries, faithful to src/ecs/.' },
   { icon: '⚡', title: 'Physics', desc: 'AABB collision detection, ball/paddle/wall response, ball trail, speed clamping.' },
   { icon: '📜', title: 'Original C++ Engine', desc: 'The repo\'s C++ codebase (Win32/OpenGL/Winsock) is preserved in src/.' },
   { icon: '🔧', title: 'Fixed Bridge Bug', desc: 'Replaced the broken wasm/js_bridge.js stub with a real working TS engine.' },
+  { icon: '🪟', title: 'Native Editor', desc: 'Windows visual editor (scene/inspector/assets/console) — built by CI, shipped as a release zip.' },
 ];
 
 function App() {
-  const [view, setView] = useState<'home' | 'game'>('home');
+  const [view, setView] = useState<'home' | 'game' | 'docs'>('home');
+
+  if (view === 'docs') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-slate-950 text-white flex items-center justify-center font-mono">Loading docs...</div>}>
+        <DocsPage />
+      </Suspense>
+    );
+  }
 
   if (view === 'game') {
     // Lazy import so the heavy game + WebGL code doesn't load on the landing page.
@@ -41,6 +53,12 @@ function App() {
             <a href="#architecture" className="text-slate-400 hover:text-white transition-colors">Architecture</a>
             <a href="https://github.com/hacvilke/td" className="text-slate-400 hover:text-white transition-colors">GitHub</a>
             <button
+              onClick={() => setView('docs')}
+              className="text-slate-400 hover:text-white transition-colors text-sm"
+            >
+              Docs
+            </button>
+            <button
               onClick={() => setView('game')}
               className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-md font-semibold text-slate-950 hover:opacity-90 transition-opacity"
             >
@@ -68,12 +86,18 @@ function App() {
             blank. We replaced it with a real TypeScript implementation of the engine's public
             API — ECS, SpriteBatch, Camera2D, Input, AABB physics — and built Pong:Rush on top.
           </p>
-          <div className="flex justify-center gap-4">
+          <div className="flex justify-center gap-4 flex-wrap">
             <button
               onClick={() => setView('game')}
               className="px-8 py-3 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-bold text-lg text-slate-950 hover:scale-105 transition-transform shadow-lg shadow-cyan-500/20"
             >
               ▶ Play Pong:Rush
+            </button>
+            <button
+              onClick={() => setView('docs')}
+              className="px-8 py-3 bg-slate-800 rounded-lg font-bold text-lg hover:bg-slate-700 transition-colors border border-slate-700"
+            >
+              📚 Read the Docs
             </button>
             <a
               href="#architecture"
@@ -119,13 +143,18 @@ function App() {
               <div
                 key={i}
                 className={`bg-slate-900/50 rounded-xl p-6 border border-slate-800 hover:border-cyan-500/50 transition-colors ${f.cta ? 'cursor-pointer' : ''}`}
-                onClick={() => f.cta && setView('game')}
+                onClick={() => {
+                  if (f.cta === 'Play Pong:Rush') setView('game');
+                  else if (f.cta === 'Read the docs') setView('docs');
+                }}
               >
                 <div className="text-4xl mb-4">{f.icon}</div>
                 <h4 className="text-lg font-semibold mb-2">{f.title}</h4>
                 <p className="text-slate-400 text-sm">{f.desc}</p>
                 {f.cta && (
-                  <div className="mt-4 text-cyan-300 text-sm font-semibold">▶ {f.cta}</div>
+                  <div className="mt-4 text-cyan-300 text-sm font-semibold">
+                    {f.cta === 'Play Pong:Rush' ? '▶ ' : '→ '}{f.cta}
+                  </div>
                 )}
               </div>
             ))}
@@ -197,17 +226,31 @@ function App() {
       <section className="py-20 px-6 text-center">
         <h3 className="text-3xl font-black mb-4">Ready to play?</h3>
         <p className="text-slate-400 mb-8">First to 7 points wins. The AI predicts your shots — mix it up.</p>
-        <button
-          onClick={() => setView('game')}
-          className="px-10 py-4 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-bold text-xl text-slate-950 hover:scale-105 transition-transform shadow-lg shadow-cyan-500/30"
-        >
-          ▶ Play Pong:Rush
-        </button>
+        <div className="flex justify-center gap-4 flex-wrap">
+          <button
+            onClick={() => setView('game')}
+            className="px-10 py-4 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-bold text-xl text-slate-950 hover:scale-105 transition-transform shadow-lg shadow-cyan-500/30"
+          >
+            ▶ Play Pong:Rush
+          </button>
+          <button
+            onClick={() => setView('docs')}
+            className="px-10 py-4 bg-slate-800 rounded-lg font-bold text-xl hover:bg-slate-700 transition-colors border border-slate-700"
+          >
+            📚 Read the Docs
+          </button>
+        </div>
       </section>
 
       <footer className="py-8 px-6 border-t border-slate-800 text-center text-slate-500 text-sm">
         <p>TD Engine · MIT License · <a href="https://github.com/hacvilke/td" className="text-cyan-400 hover:underline">github.com/hacvilke/td</a></p>
         <p className="mt-1 text-xs font-mono">No STL for hot paths · OpenGL 3.3 Core · WebGL2 · TypeScript port preserves the original C++ API</p>
+        <div className="mt-3 flex justify-center gap-4 text-xs">
+          <button onClick={() => setView('docs')} className="text-cyan-400 hover:underline">Docs</button>
+          <button onClick={() => setView('game')} className="text-cyan-400 hover:underline">Play</button>
+          <a href="https://github.com/hacvilke/td/releases" className="text-cyan-400 hover:underline">Releases</a>
+          <a href="https://github.com/hacvilke/td/actions" className="text-cyan-400 hover:underline">CI</a>
+        </div>
       </footer>
     </div>
   );

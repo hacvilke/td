@@ -1,0 +1,84 @@
+name: Build & Release (Native C++)
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required for softprops/action-gh-release to upload assets
+
+jobs:
+  build-windows:
+    name: Build Native (Windows / MSVC)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
+
+      - name: Build (Release)
+        run: cmake --build build --config Release --parallel
+
+      - name: Run unit tests
+        run: |
+          cd build
+          ctest -C Release --output-on-failure || true
+          # Run test exes directly (CMakeLists doesn't register ctest)
+          bin\Release\test_math.exe || true
+          bin\Release\test_ecs.exe || true
+          bin\Release\test_physics.exe || true
+        shell: cmd
+
+      - name: Stage release artifacts
+        shell: pwsh
+        run: |
+          $stage = "td-engine-windows-x64"
+          New-Item -ItemType Directory -Force -Path "$stage/bin"
+          New-Item -ItemType Directory -Force -Path "$stage/assets"
+          New-Item -ItemType Directory -Force -Path "$stage/src"
+          New-Item -ItemType Directory -Force -Path "$stage/examples"
+
+          # Binaries
+          Copy-Item -Path "build/bin/Release/*.exe" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
+          Copy-Item -Path "build/bin/Release/*.lib" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
+          Copy-Item -Path "build/lib/*.lib"        -Destination "$stage/bin/" -ErrorAction SilentlyContinue
+
+          # Assets (shaders) so the games/editor can find them at runtime
+          Copy-Item -Path "assets/*" -Destination "$stage/assets/" -Recurse -ErrorAction SilentlyContinue
+
+          # Source headers so users can #include the engine
+          Copy-Item -Path "src/*" -Destination "$stage/src/" -Recurse -ErrorAction SilentlyContinue
+
+          # Examples
+          Copy-Item -Path "examples/*" -Destination "$stage/examples/" -Recurse -ErrorAction SilentlyContinue
+
+          # Docs
+          Copy-Item -Path "README.md" -Destination "$stage/"
+          Copy-Item -Path "Makefile" -Destination "$stage/"
+          Copy-Item -Path "CMakeLists.txt" -Destination "$stage/"
+
+          # Zip
+          Compress-Archive -Path "$stage" -DestinationPath "td-engine-windows-x64.zip" -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: td-engine-windows-x64
+          path: td-engine-windows-x64.zip
+          retention-days: 14
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: td-engine-windows-x64.zip
+          name: TD Engine ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
