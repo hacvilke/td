@@ -1,6 +1,7 @@
 #include "parser.h"
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>   // snprintf
 
 namespace td {
 
