@@ -4,9 +4,78 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TD Engine — Pong:Rush</title>
+    <style>
+      /* Fallback styles shown only when Vite hasn't processed this file
+         (i.e., when GitHub Pages serves the raw source). */
+      .vite-fallback {
+        position: fixed; inset: 0; display: none;
+        background: #0f172a; color: #e2e8f0;
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        padding: 2rem; text-align: center;
+        flex-direction: column; align-items: center; justify-content: center;
+        gap: 1rem;
+      }
+      .vite-fallback h1 { color: #67e8f9; font-size: 2rem; margin: 0; }
+      .vite-fallback p { color: #94a3b8; max-width: 480px; line-height: 1.5; margin: 0; }
+      .vite-fallback a { color: #67e8f9; }
+      .vite-fallback code { background: #1e293b; padding: 0.2rem 0.4rem; border-radius: 4px; color: #f0abfc; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!--
+      Fallback for when this file is served RAW by GitHub Pages (from the
+      main branch root) instead of by Vite. In that case /src/main.tsx
+      404s and the page would be blank. We detect the failure and show a
+      helpful message pointing users to the correct URL.
+
+      The built single-file app lives on the `gh-pages` branch (deployed
+      by CI). The repo's Pages setting should point at `gh-pages` for the
+      site to work — see the README or the CI workflow.
+    -->
+    <div class="vite-fallback" id="fallback">
+      <h1>TD Engine</h1>
+      <p>This page is being served from the source tree, not the built app.</p>
+      <p>The built site lives on the <code>gh-pages</code> branch. If you're the repo owner, set <strong>Settings → Pages → Source</strong> to <code>Deploy from a branch</code> → <code>gh-pages</code> → <code>/ (root)</code>.</p>
+      <p>Or run locally: <code>npm install &amp;&amp; npm run dev</code></p>
+      <p><a href="https://github.com/hacvilke/td">→ View source on GitHub</a></p>
+    </div>
+    <script>
+      // If the module script above fails to load (404 on /src/main.tsx),
+      // show the fallback UI. Vite (dev or built) never triggers this
+      // because it either transforms /src/main.tsx or replaces the tag
+      // with the bundled JS.
+      (function() {
+        var failed = false;
+        window.addEventListener('error', function(e) {
+          var t = e.target || e.srcElement;
+          if (t && t.tagName === 'SCRIPT' && /main\.tsx/.test(t.src || '')) {
+            failed = true;
+            document.getElementById('fallback').style.display = 'flex';
+          }
+        }, true);
+        // Also catch the case where the script tag is just gone (built version)
+        setTimeout(function() {
+          var scripts = document.querySelectorAll('script[type=module]');
+          var hasMain = false;
+          for (var i = 0; i < scripts.length; i++) {
+            if (/main/.test(scripts[i].src || scripts[i].innerHTML || '')) { hasMain = true; break; }
+          }
+          // In the built version, the script is inlined and doesn't reference main.tsx.
+          // If we still have the raw /src/main.tsx reference after 2s, show fallback.
+          var rawMain = document.querySelector('script[type=module][src*="/src/main.tsx"]');
+          if (rawMain && !document.getElementById('root').hasChildNodes()) {
+            // Wait a bit more to see if it loads
+            setTimeout(function() {
+              if (!document.getElementById('root').hasChildNodes()) {
+                document.getElementById('fallback').style.display = 'flex';
+              }
+            }, 2000);
+          }
+        }, 100);
+      })();
+    </script>
   </body>
 </html>
