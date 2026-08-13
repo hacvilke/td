@@ -117,8 +117,8 @@ if(TD_BUILD_WEB)
         -s ALLOW_MEMORY_GROWTH=1
         -s NO_EXIT_RUNTIME=1
         -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1
-        -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","malloc","free","HEAPF32","HEAP16","HEAPU8"]'
-        -s EXPORTED_FUNCTIONS='["_main","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks"]'
+        -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP16","HEAPU8","getValue","setValue"]'
+        -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks"]'
         -s ASYNCIFY=0
         -s EXIT_RUNTIME=0
     )
