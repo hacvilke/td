@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser.">
+    <meta name="theme-color" content="#0a0e14">
+    <!-- Cache-bust: tell browser not to cache the page itself, so users always
+         get the latest version (previous Pong:Rush builds were sticking in cache). -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>TD Engine - Web Player</title>
+    <link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+    <!-- ====================================================================== -->
+    <!-- Loading Screen                                                          -->
+    <!-- ====================================================================== -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <div class="logo-mark">TD</div>
+                <div class="logo-text">TD ENGINE</div>
+            </div>
+            <div class="loading-bar">
+                <div id="progress-bar-fill" class="progress-bar-fill"></div>
+            </div>
+            <div id="loading-detail" class="loading-detail">Initializing...</div>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Game Canvas                                                             -->
+    <!-- ====================================================================== -->
+    <canvas id="game-canvas" width="800" height="600" style="display: none;"></canvas>
+
+    <!-- ====================================================================== -->
+    <!-- HUD - FPS counter                                                       -->
+    <!-- ====================================================================== -->
+    <div id="fps-counter" style="display: none;">FPS: 0</div>
+
+    <!-- ====================================================================== -->
+    <!-- Controls Overlay - shown before the game starts                         -->
+    <!-- ====================================================================== -->
+    <div id="controls-overlay" style="display: none;">
+        <div class="controls-card">
+            <h1 class="controls-title">VOID RUNNER</h1>
+            <p class="controls-subtitle">A space shooter on TD Engine</p>
+
+            <div class="controls-grid">
+                <div class="control-row">
+                    <span class="key">A / D &nbsp; &larr; &rarr;</span>
+                    <span class="action">Move left / right</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">W / S &nbsp; &uarr; &darr;</span>
+                    <span class="action">Move up / down</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">Space</span>
+                    <span class="action">Shoot (hold)</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">P</span>
+                    <span class="action">Pause</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">R</span>
+                    <span class="action">Restart (after game over)</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">Esc</span>
+                    <span class="action">Engine pause overlay</span>
+                </div>
+            </div>
+
+            <div class="controls-tip">
+                <p><span style="color:#ff6b6b">●</span> Drones &middot;
+                   <span style="color:#ffa64d">●</span> Hunters track you &middot;
+                   <span style="color:#b380ff">●</span> Tanks shoot back</p>
+                <p>Grab powerups: <span style="color:#ffd24a">RAPID</span> &middot;
+                   <span style="color:#66ff80">TRIPLE</span> &middot;
+                   <span style="color:#66b3ff">SHIELD</span></p>
+            </div>
+
+            <button id="start-button" class="start-button">Start</button>
+            <p class="controls-hint">Click anywhere to begin</p>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Pause Overlay                                                           -->
+    <!-- ====================================================================== -->
+    <div id="pause-overlay" style="display: none;">
+        <div class="pause-card">
+            <h2 class="pause-title">Paused</h2>
+            <button id="resume-button" class="resume-button">Resume</button>
+            <button id="restart-button" class="restart-button">Restart Scene</button>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Engine Console - mirrors td::Logger output                              -->
+    <!-- ====================================================================== -->
+    <div id="engine-console" style="display: none;">
+        <div id="console-header">
+            <span>TD ENGINE CONSOLE</span>
+            <button id="console-close" title="Hide console">&times;</button>
+        </div>
+        <div id="console-output"></div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Scripts                                                                 -->
+    <!-- ====================================================================== -->
+
+    <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
+    <script src="td-engine.js?v=2"></script>
+
+    <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
+    <script src="js_bridge.js?v=2"></script>
+
+    <!-- Sample game - VOID RUNNER, a space shooter that runs on the engine via WASM. -->
+    <script src="examples/voidrunner.js?v=2"></script>
+
+    <script>
+        (async function () {
+            const loadingScreen    = document.getElementById('loading-screen');
+            const loadingDetail    = document.getElementById('loading-detail');
+            const progressBarFill  = document.getElementById('progress-bar-fill');
+            const controlsOverlay  = document.getElementById('controls-overlay');
+            const gameCanvas       = document.getElementById('game-canvas');
+            const fpsCounter       = document.getElementById('fps-counter');
+            const consoleOutput    = document.getElementById('console-output');
+            const engineConsole    = document.getElementById('engine-console');
+
+            // -----------------------------------------------------------------
+            // Wire engine log -> on-screen console
+            // -----------------------------------------------------------------
+            const consoleLines = [];
+            const MAX_CONSOLE_LINES = 200;
+
+            function appendConsoleLine(level, message) {
+                const div = document.createElement('div');
+                div.className = 'log-' + level;
+                const time = new Date().toLocaleTimeString();
+                div.textContent = '[' + time + '] ' + message;
+                consoleOutput.appendChild(div);
+                consoleLines.push(div);
+                if (consoleLines.length > MAX_CONSOLE_LINES) {
+                    const old = consoleLines.shift();
+                    if (old.parentNode) old.parentNode.removeChild(old);
+                }
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
+
+            TDBridge.onLog(function (entry) {
+                appendConsoleLine(entry.level, entry.message);
+                engineConsole.style.display = 'flex';
+            });
+
+            document.getElementById('console-close').addEventListener('click', function () {
+                engineConsole.style.display = 'none';
+            });
+
+            // -----------------------------------------------------------------
+            // Boot sequence
+            // -----------------------------------------------------------------
+            loadingDetail.textContent = 'Loading WebAssembly module...';
+            progressBarFill.style.width = '20%';
+
+            TDBridge.onReady(function () {
+                loadingDetail.textContent = 'Engine ready!';
+                progressBarFill.style.width = '100%';
+
+                setTimeout(function () {
+                    loadingScreen.style.display = 'none';
+                    controlsOverlay.style.display = 'flex';
+                    gameCanvas.style.display = 'block';
+                }, 500);
+            });
+
+            try {
+                await TDBridge.init('game-canvas');
+            } catch (err) {
+                loadingDetail.textContent = 'Error: ' + err.message;
+                progressBarFill.style.width = '100%';
+                progressBarFill.classList.add('error');
+                console.error('TD Engine failed to load:', err);
+                return;
+            }
+
+            // -----------------------------------------------------------------
+            // FPS counter
+            // -----------------------------------------------------------------
+            let frameCount = 0;
+            let lastFpsTime = performance.now();
+            function updateFPS() {
+                frameCount++;
+                const now = performance.now();
+                if (now - lastFpsTime >= 1000) {
+                    fpsCounter.textContent = 'FPS: ' + frameCount;
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+                requestAnimationFrame(updateFPS);
+            }
+            updateFPS();
+
+            // -----------------------------------------------------------------
+            // Start / pause UI
+            // -----------------------------------------------------------------
+            function startGame() {
+                controlsOverlay.style.display = 'none';
+                fpsCounter.style.display = 'block';
+                TDBridge.resumeAudio();
+
+                // Launch the sample game (defined in examples/voidrunner.js).
+                if (typeof window.startTDExample === 'function') {
+                    window.startTDExample();
+                }
+            }
+
+            document.getElementById('start-button').addEventListener('click', function (e) {
+                e.stopPropagation();
+                startGame();
+            });
+            controlsOverlay.addEventListener('click', startGame);
+
+            document.addEventListener('keydown', function (e) {
+                if (e.keyCode === 0x1B /*Escape*/) {
+                    const pause = document.getElementById('pause-overlay');
+                    pause.style.display = (pause.style.display === 'none' || !pause.style.display)
+                        ? 'flex' : 'none';
+                }
+            });
+
+            document.getElementById('resume-button').addEventListener('click', function () {
+                document.getElementById('pause-overlay').style.display = 'none';
+                TDBridge.resumeAudio();
+            });
+
+            document.getElementById('restart-button').addEventListener('click', function () {
+                document.getElementById('pause-overlay').style.display = 'none';
+                if (typeof window.restartTDExample === 'function') {
+                    window.restartTDExample();
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
