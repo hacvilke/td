@@ -1,15 +1,14 @@
 import { useState } from 'react';
 
-type Tab = 'overview' | 'td-lang' | 'cpp' | 'ts' | 'examples' | 'editor' | 'workflows';
+type Tab = 'overview' | 'td-lang' | 'cpp' | 'ts' | 'examples' | 'editor';
 
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: 'overview',  label: 'Overview',        hint: 'What this is, where things live' },
-  { id: 'td-lang',   label: 'TD Scripting',    hint: 'Embedded scripting language' },
-  { id: 'cpp',       label: 'C++ Engine',      hint: 'Native API reference' },
-  { id: 'ts',        label: 'TS / JS Port',    hint: 'Browser port reference' },
+  { id: 'td-lang',   label: 'TD Scripting',    hint: 'Embedded scripting language (C++ only)' },
+  { id: 'cpp',       label: 'C++ Engine',      hint: 'Native Windows game API reference' },
+  { id: 'ts',        label: 'TS / JS Port',    hint: 'Browser game API reference' },
   { id: 'examples',  label: 'Example Games',   hint: 'Pong, Platformer, Pong:Rush' },
-  { id: 'editor',    label: 'Editor',          hint: 'Native visual editor' },
-  { id: 'workflows', label: 'CI / Releases',   hint: 'GitHub Actions, Pages, releases' },
+  { id: 'editor',    label: 'Editor',          hint: 'Native Windows visual editor' },
 ];
 
 export default function DocsPage() {
@@ -91,7 +90,6 @@ export default function DocsPage() {
           {tab === 'ts'        && <TsTab />}
           {tab === 'examples'  && <ExamplesTab />}
           {tab === 'editor'    && <EditorTab />}
-          {tab === 'workflows' && <WorkflowsTab />}
         </main>
       </div>
     </div>
@@ -166,72 +164,133 @@ function OverviewTab() {
     <div>
       <H2>Overview</H2>
       <P>
-        TD Engine is a complete 2D/3D game engine written from scratch in C/C++ with zero external
-        dependencies, plus a TypeScript port that runs in any modern browser. The C++ source tree in
-        <Mono>src/</Mono> is the engine itself — Win32 + OpenGL 3.3 + Winsock + waveOut, with an ECS,
-        SpriteBatch, AABB physics, audio mixer, networking, asset pipeline, and the TD scripting
-        language. The TypeScript port in <Mono>web/engine/</Mono> mirrors the parts needed to run games
-        in a browser (ECS, SpriteBatch, Camera2D, Input, Math) — a subset, not a parallel codebase.
+        TD Engine is a from-scratch 2D game engine written in C++17, with a small TypeScript port
+        that lets simple games run in a browser. The C++ source tree in <Mono>src/</Mono> is the
+        engine itself — Win32 + OpenGL 3.3 + Winsock + waveOut, with an ECS, SpriteBatch, AABB
+        physics, audio mixer, networking, asset pipeline, and the TD scripting language. The
+        TypeScript port in <Mono>web/engine/</Mono> is a 6-file subset (ECS, SpriteBatch, Camera2D,
+        Input, Math) — enough to run a browser game like Pong, but not a full reimplementation.
       </P>
 
-      <H3>The engine, and a browser port of part of it</H3>
+      <H3>Two ways to build a game — pick one</H3>
+      <P>
+        These two paths are <span className="font-medium text-neutral-900">independent</span>. Writing
+        C++ does not produce a browser game, and writing TypeScript does not produce a native
+        <Mono>.exe</Mono>. They share API shapes (Vec2, Mat4, World, SpriteBatch, Camera2D) so the
+        code looks similar, but they are separate codebases that do not connect to each other.
+      </P>
       <div className="grid md:grid-cols-2 gap-4 mb-2">
         <div className="border border-neutral-200 rounded-md p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-neutral-900">The engine</span>
-            <Pill>C++17 · src/</Pill>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-neutral-900">Path A — Native Windows game</span>
+            <Pill>C++ · src/</Pill>
           </div>
           <P>
-            Builds on Windows with MinGW or Visual Studio 2019+. Uses Win32 for windowing/input,
-            OpenGL 3.3 for rendering, Winsock2 for networking, waveOut for audio. ~80 files across
-            <Mono>core/</Mono>, <Mono>platform/</Mono>, <Mono>renderer/</Mono>, <Mono>physics/</Mono>,
-            <Mono>audio/</Mono>, <Mono>net/</Mono>, <Mono>assets/</Mono>, <Mono>ecs/</Mono>, <Mono>td/</Mono>.
+            Write C++ that <Mono>#include</Mono>s from <Mono>src/</Mono>. Build with Visual Studio,
+            MinGW, or the prebuilt CI artifacts. You get a <Mono>.exe</Mono> that runs on Windows.
+          </P>
+          <P>
+            <span className="text-neutral-900 font-medium">Full engine available:</span> ECS,
+            SpriteBatch, Camera2D, AABB + RigidBody physics, audio mixer (waveOut), networking
+            (Winsock2), 3D meshes, PNG/OBJ/WAV asset loaders, and the TD scripting VM.
+          </P>
+          <P>
+            <span className="text-neutral-900 font-medium">Editor:</span>{' '}
+            <Mono>td-editor.exe</Mono> — a Windows-only visual editor with scene hierarchy,
+            inspector, asset browser, and console panels.
+          </P>
+          <P className="text-neutral-500 text-xs mt-3 pt-3 border-t border-neutral-200">
+            Use this path if you want the full engine, native performance, or the visual editor.
           </P>
         </div>
         <div className="border border-neutral-200 rounded-md p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-neutral-900">Browser port (subset)</span>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-neutral-900">Path B — Browser game</span>
             <Pill>TS · web/engine/</Pill>
           </div>
           <P>
-            Runs in any WebGL2-capable browser. Mirrors the C++ API 1:1 (Vec2/3/4, Mat4, World,
-            SpriteBatch, Camera2D, Input, GameLoop). 6 files — enough to run Pong:Rush. Audio,
-            networking, 3D, asset pipeline, and the TD scripting VM are not ported.
+            Write TypeScript that imports from <Mono>web/engine/</Mono>. Build with Vite
+            (<Mono>npm run build</Mono>). You get a single-file <Mono>dist/index.html</Mono> that
+            runs in any WebGL2 browser.
+          </P>
+          <P>
+            <span className="text-neutral-900 font-medium">Subset only:</span> ECS, SpriteBatch,
+            Camera2D, Input, Math, GameLoop. No audio, no networking, no 3D, no asset pipeline,
+            no TD scripting VM. You write game logic in TypeScript directly — TD scripts do not
+            run in the browser.
+          </P>
+          <P>
+            <span className="text-neutral-900 font-medium">Editor:</span> none. You compose scenes
+            in code via <Mono>world.createEntity()</Mono> / <Mono>world.addPosition()</Mono> / etc.
+            Use any code editor you like (VS Code, Sublime, vim) — <Mono>td-editor.exe</Mono> is
+            not involved in this path.
+          </P>
+          <P className="text-neutral-500 text-xs mt-3 pt-3 border-t border-neutral-200">
+            Use this path if you want a game that runs in a browser, no install required.
           </P>
         </div>
       </div>
 
+      <H3>What the browser port is — and isn't</H3>
+      <P>
+        <Mono>web/engine/</Mono> is <span className="font-medium text-neutral-900">not</span> a full
+        port of <Mono>src/</Mono>. It is a small, hand-written TypeScript reimplementation of the
+        engine's core concepts (ECS, sprite batching, camera, input, math) — 6 files total. It
+        exists so a simple game like Pong can run in a browser without a Windows machine.
+      </P>
+      <P>
+        It is <span className="font-medium text-neutral-900">not</span> an automatic porting
+        pipeline. There is no tool that takes <Mono>src/*.cpp</Mono> and produces
+        <Mono>web/engine/*.ts</Mono>. If you want more of the C++ engine available in the browser
+        (audio, networking, 3D, the TD VM), you would need to either port those modules to
+        TypeScript by hand, or finish the abandoned Emscripten/WASM path
+        (<Mono>wasm/emscripten_main.cpp</Mono> exists but was never completed).
+      </P>
+      <P>
+        It is <span className="font-medium text-neutral-900">not</span> an alternative to Visual
+        Studio. A user who wants the full engine but doesn't have Visual Studio should use MinGW
+        (free, no VS needed) or download the prebuilt <Mono>.exe</Mono> from GitHub Releases — both
+        still produce native Windows binaries, not browser games.
+      </P>
+
       <H3>What's where</H3>
       <Table rows={[
         ['src/',                 'C++ engine source (math, ECS, renderer, physics, audio, net, scripting)'],
-        ['editor/',              'Native visual editor (immediate-mode GUI, scene/inspector/asset panels)'],
+        ['editor/',              'Native Windows visual editor (scene/inspector/asset panels)'],
         ['examples/',            'Native example games: pong/, platformer/'],
         ['tests/',               'C++ unit tests (math, ECS, physics)'],
         ['assets/shaders/',      'GLSL shaders (sprite.vert/frag, basic_3d.vert/frag)'],
-        ['web/engine/',          'TypeScript port of the engine core (subset)'],
+        ['web/engine/',          'TypeScript port of the engine core (6-file subset)'],
         ['web/game/',            'Browser games (Pong:Rush, particle system)'],
-        ['web/js_bridge.ts',     'Global window.TDEngine shim for static HTML pages'],
+        ['web/js_bridge.ts',     'Global window.TDEngine shim for static HTML pages (no bundler)'],
         ['web/engine-wrapper.ts','Re-exports the TS engine for legacy imports'],
-        ['src/App.tsx, src/GamePage.tsx', 'React landing + game HUD'],
-        ['.github/workflows/ci.yml',      'Web: typecheck + build + GitHub Pages'],
-        ['.github/workflows/native.yml',  'Native: CMake build + release on tag'],
+        ['src/App.tsx, src/GamePage.tsx', 'React landing page + game HUD for this site'],
+        ['wasm/emscripten_main.cpp', 'Abandoned Emscripten entry point (not built, not used)'],
       ]} />
 
-      <H3>Quick start — browser</H3>
-      <Code lang="bash">{`npm install
+      <H3>Quick start — browser game</H3>
+      <Code lang="bash">{`git clone https://github.com/hacvilke/td.git
+cd td
+npm install
 npm run dev      # Vite dev server at http://localhost:5173
 npm run build    # single-file dist/index.html
 npm run preview  # serve the production build`}</Code>
 
-      <H3>Quick start — native (Windows)</H3>
-      <Code lang="bash">{`# Ninja + MSVC (recommended on CI)
+      <H3>Quick start — native Windows game</H3>
+      <Code lang="bash">{`git clone https://github.com/hacvilke/td.git
+cd td
+
+# Option 1: Ninja + MSVC (Visual Studio 2022 installed)
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 # Binaries land in build/bin/
 
-# Or Visual Studio generator
-cmake -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release`}</Code>
+# Option 2: MinGW (no Visual Studio needed)
+cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+
+# Option 3: download prebuilt .exe from GitHub Releases (no build at all)
+# https://github.com/hacvilke/td/releases`}</Code>
     </div>
   );
 }
@@ -518,11 +577,60 @@ function TsTab() {
     <div>
       <H2>TypeScript / JavaScript Port</H2>
       <P>
-        The browser port mirrors the C++ engine's public API under <Mono>web/engine/</Mono>. The same
-        shapes (<Mono>World</Mono>, <Mono>SpriteBatch</Mono>, <Mono>Camera2D</Mono>, <Mono>Input</Mono>,
-        <Mono>Mat4</Mono>) mean a C++ game translates almost line-for-line. It is a subset — audio,
-        networking, 3D meshes, asset pipeline, and the TD scripting VM are not ported.
+        This is how browser games are made. You write TypeScript that imports from
+        <Mono>web/engine/</Mono>, build with Vite, and you get a single-file
+        <Mono>dist/index.html</Mono> that runs in any WebGL2 browser. There is no C++-to-browser
+        pipeline — browser games are written in TypeScript directly against this port.
       </P>
+
+      <H3>What this is — and what it isn't</H3>
+      <P>
+        <Mono>web/engine/</Mono> is a small, hand-written TypeScript reimplementation of the C++
+        engine's core concepts. It mirrors the C++ API shapes (<Mono>World</Mono>,
+        <Mono>SpriteBatch</Mono>, <Mono>Camera2D</Mono>, <Mono>Input</Mono>, <Mono>Mat4</Mono>) so a
+        C++ game's logic translates almost line-for-line — but it is a{' '}
+        <span className="font-medium text-neutral-900">subset</span>, not a full port.
+      </P>
+      <div className="grid md:grid-cols-2 gap-4 my-4">
+        <div className="border border-neutral-200 rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-neutral-500 mb-2">Ported (available in browser)</div>
+          <ul className="text-sm text-neutral-700 space-y-1 list-disc ml-4">
+            <li>ECS — World, ComponentType, componentBit, components</li>
+            <li>SpriteBatch — textured quads with batching (WebGL2)</li>
+            <li>Camera2D — orthographic projection + view matrix</li>
+            <li>Input — keyboard, mouse, edge-triggered events</li>
+            <li>Math — Vec2, Vec3, Vec4, Mat4, Color, clamp, lerp</li>
+            <li>GameLoop — fixed-step 60Hz with interpolation</li>
+          </ul>
+        </div>
+        <div className="border border-neutral-200 rounded-md p-4">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-neutral-500 mb-2">Not ported (C++ only)</div>
+          <ul className="text-sm text-neutral-700 space-y-1 list-disc ml-4">
+            <li>Audio mixer (waveOut) — use Web Audio API directly</li>
+            <li>Networking (Winsock2) — use WebSockets / WebRTC</li>
+            <li>3D mesh rendering — not in the browser port</li>
+            <li>PNG / OBJ / WAV asset loaders — use fetch + Image</li>
+            <li>TD scripting VM — write game logic in TypeScript instead</li>
+            <li>Visual editor — compose scenes in code</li>
+          </ul>
+        </div>
+      </div>
+
+      <H3>The end-to-end workflow</H3>
+      <P>
+        A user making a browser game does <span className="font-medium text-neutral-900">not</span>{' '}
+        use <Mono>td-editor.exe</Mono>, does <span className="font-medium text-neutral-900">not</span>{' '}
+        write C++, and does{' '}
+        <span className="font-medium text-neutral-900">not</span> need Visual Studio. The workflow is:
+      </P>
+      <ol className="text-sm text-neutral-700 space-y-2 list-decimal ml-5 mb-4">
+        <li>Clone the repo, run <Mono>npm install</Mono> to get Vite + TypeScript.</li>
+        <li>Write your game as a TypeScript file that imports <Mono>Engine</Mono> from <Mono>web/engine/</Mono>.</li>
+        <li>Use any code editor you like — VS Code, Sublime, vim, anything. There is no special IDE.</li>
+        <li>Run <Mono>npm run dev</Mono> for a live dev server at <Mono>localhost:5173</Mono>.</li>
+        <li>Run <Mono>npm run build</Mono> to produce a single-file <Mono>dist/index.html</Mono>.</li>
+        <li>Host <Mono>dist/index.html</Mono> anywhere — GitHub Pages, Netlify, any static host.</li>
+      </ol>
 
       <H3>Engine modules</H3>
       <Table rows={[
@@ -533,7 +641,7 @@ function TsTab() {
         ['web/engine/input.ts',     'src/platform/win32_input.h',                     'Input, Key'],
         ['web/engine/engine.ts',    'src/core/game_loop.h + window bootstrap',        'Engine (top-level entry)'],
         ['web/engine-wrapper.ts',   '— (compat shim)',                                'Re-exports everything above'],
-        ['web/js_bridge.ts',        'wasm/js_bridge.js (replaced)',                   'Global window.TDEngine shim'],
+        ['web/js_bridge.ts',        'wasm/js_bridge.js (replaced)',                   'Global window.TDEngine shim for no-bundler pages'],
       ]} />
 
       <H3>Hello, browser game</H3>
@@ -818,101 +926,4 @@ void renderMyPanel(GuiContext& gui, World& world) {
   );
 }
 
-/* ---------- Workflows ---------- */
 
-function WorkflowsTab() {
-  return (
-    <div>
-      <H2>CI / Releases</H2>
-      <P>
-        Two GitHub Actions workflows keep the project healthy. Both live in
-        <Mono>.github/workflows/</Mono>.
-      </P>
-
-      <H3>ci.yml — Web build + GitHub Pages</H3>
-      <P>
-        Runs on every push to <Mono>main</Mono> / <Mono>master</Mono> and on every PR. Uses Node 24.
-        Runs <Mono>tsc --noEmit</Mono> for typecheck, then <Mono>npm run build</Mono> to produce a
-        single-file <Mono>dist/index.html</Mono>. On <Mono>main</Mono>, deploys that to GitHub Pages.
-      </P>
-      <Code lang="yaml">{`# .github/workflows/ci.yml (excerpt)
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '24' }
-      - run: npm install --no-audit --no-fund
-      - run: npx tsc --noEmit
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: dist/ }
-  deploy:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: github-pages
-    steps:
-      - uses: actions/deploy-pages@v4`}</Code>
-
-      <H3>native.yml — C++ build + release</H3>
-      <P>
-        Runs on every push and PR. Builds the C++ engine + editor + examples on
-        <Mono>windows-latest</Mono> with CMake + Ninja + Visual Studio 2022 (located via
-        <Mono>vswhere</Mono> so it survives runner-image rotations). Runs the unit tests
-        (<Mono>test_math</Mono>, <Mono>test_ecs</Mono>, <Mono>test_physics</Mono>). Stages everything
-        (binaries, assets, headers, examples, README, LICENSE) into
-        <Mono>td-engine-windows-x64.zip</Mono> and uploads it as a build artifact (30-day retention).
-      </P>
-      <P>
-        When you push a tag matching <Mono>v*.*.*</Mono> (e.g. <Mono>v1.0.0</Mono>), the same workflow
-        attaches the zip to a GitHub Release with auto-generated release notes.
-      </P>
-      <Code lang="yaml">{`# .github/workflows/native.yml (excerpt)
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      # Locate VS via vswhere, then call VsDevCmd.bat + cmake
-      - name: Configure (Ninja + MSVC)
-        shell: pwsh
-        run: |
-          $vswhere = "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath  = & $vswhere -latest -property installationPath
-          cmd /c "call \`"$vsPath\Common7\Tools\VsDevCmd.bat\`" -arch=amd64 -host_arch=x64 && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release"
-      - name: Build
-        shell: pwsh
-        run: |
-          $vswhere = "\${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath  = & $vswhere -latest -property installationPath
-          cmd /c "call \`"$vsPath\Common7\Tools\VsDevCmd.bat\`" -arch=amd64 -host_arch=x64 && cmake --build build --parallel"
-      - run: build\\bin\\test_math.exe
-      # ...stage + zip...
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
-        with: { files: td-engine-windows-x64.zip }`}</Code>
-
-      <H3>How to cut a release</H3>
-      <Code lang="bash">{`git tag v1.0.0
-git push origin v1.0.0
-# The native.yml workflow will build + publish a GitHub Release
-# with td-engine-windows-x64.zip attached, at:
-#   https://github.com/hacvilke/td/releases/tag/v1.0.0`}</Code>
-
-      <H3>Enabling GitHub Pages (one-time)</H3>
-      <ol className="text-sm text-neutral-700 space-y-2 list-decimal ml-5 mb-4">
-        <li>Open <Mono>Settings → Pages</Mono> in the repo.</li>
-        <li>Under <span className="font-medium">Build and deployment → Source</span>, select <span className="font-medium">GitHub Actions</span>.</li>
-        <li>The next push to <Mono>main</Mono> will publish the game to <Mono>https://hacvilke.github.io/td/</Mono>.</li>
-      </ol>
-
-      <H3>Workflow artifacts at a glance</H3>
-      <Table rows={[
-        ['ci.yml',      'push to main, any PR',                         'GitHub Pages (single-file dist/index.html)'],
-        ['native.yml',  'push to main, any PR, tag v*.*.*',             'td-engine-windows-x64.zip (release asset on tags)'],
-      ]} />
-    </div>
-  );
-}
