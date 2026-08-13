@@ -19,21 +19,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure CMake
-        run: cmake -B build -S . -G "Visual Studio 17 2022" -A x64
+      # Set up the MSVC dev shell so cmake/ninja can locate the toolchain
+      # even on fresh runner images where the Visual Studio generator's
+      # vswhere probe sometimes comes back empty.
+      - name: Set up MSVC dev shell
+        uses: ilammy/msvc-dev-shell@v1
+        with:
+          arch: x64
 
-      - name: Build (Release)
-        run: cmake --build build --config Release --parallel
+      - name: Configure CMake (Ninja)
+        # Ninja is preinstalled on windows-latest and is more reliable on
+        # CI than the "Visual Studio 17 2022" generator, which fails with
+        # "could not find any instance of Visual Studio" when the runner
+        # image's VS installation layout changes.
+        run: cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=bin
+
+      - name: Build
+        run: cmake --build build --parallel
 
       - name: Run unit tests
-        run: |
-          cd build
-          ctest -C Release --output-on-failure || true
-          # Run test exes directly (CMakeLists doesn't register ctest)
-          bin\Release\test_math.exe || true
-          bin\Release\test_ecs.exe || true
-          bin\Release\test_physics.exe || true
         shell: cmd
+        run: |
+          build\bin\test_math.exe || true
+          build\bin\test_ecs.exe || true
+          build\bin\test_physics.exe || true
 
       - name: Stage release artifacts
         shell: pwsh
@@ -43,11 +52,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$stage/assets"
           New-Item -ItemType Directory -Force -Path "$stage/src"
           New-Item -ItemType Directory -Force -Path "$stage/examples"
+          New-Item -ItemType Directory -Force -Path "$stage/editor"
+          New-Item -ItemType Directory -Force -Path "$stage/tests"
 
-          # Binaries
-          Copy-Item -Path "build/bin/Release/*.exe" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
-          Copy-Item -Path "build/bin/Release/*.lib" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
-          Copy-Item -Path "build/lib/*.lib"        -Destination "$stage/bin/" -ErrorAction SilentlyContinue
+          # Binaries (.exe + .lib)
+          Copy-Item -Path "build/bin/*.exe" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
+          Copy-Item -Path "build/bin/*.lib" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
+          Copy-Item -Path "build/*.lib"    -Destination "$stage/bin/" -ErrorAction SilentlyContinue
 
           # Assets (shaders) so the games/editor can find them at runtime
           Copy-Item -Path "assets/*" -Destination "$stage/assets/" -Recurse -ErrorAction SilentlyContinue
@@ -55,12 +66,14 @@ jobs:
           # Source headers so users can #include the engine
           Copy-Item -Path "src/*" -Destination "$stage/src/" -Recurse -ErrorAction SilentlyContinue
 
-          # Examples
+          # Examples + editor + tests
           Copy-Item -Path "examples/*" -Destination "$stage/examples/" -Recurse -ErrorAction SilentlyContinue
+          Copy-Item -Path "editor/*"   -Destination "$stage/editor/"   -Recurse -ErrorAction SilentlyContinue
+          Copy-Item -Path "tests/*"    -Destination "$stage/tests/"    -Recurse -ErrorAction SilentlyContinue
 
           # Docs
-          Copy-Item -Path "README.md" -Destination "$stage/"
-          Copy-Item -Path "Makefile" -Destination "$stage/"
+          Copy-Item -Path "README.md"      -Destination "$stage/"
+          Copy-Item -Path "Makefile"       -Destination "$stage/"
           Copy-Item -Path "CMakeLists.txt" -Destination "$stage/"
 
           # Zip

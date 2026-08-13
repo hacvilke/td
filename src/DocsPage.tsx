@@ -639,21 +639,36 @@ if (input.key(Key.W) || input.key(Key.Up)) { /* move up */ }
 if (input.keyPressed(Key.Space)) { /* jump (edge-triggered) */ }
 if (input.keyReleased(Key.Escape)) { /* pause */ }`}</Code>
 
-      <H3>For static HTML pages</H3>
+      <H3>For static HTML pages (no bundler)</H3>
       <P>
-        If you're not using a bundler, include <code className="text-cyan-300">web/js_bridge.ts</code>
-        (compiled to JS) or import it as a module. It exposes a global
-        <code className="text-cyan-300"> window.TDEngine</code> with
+        <code className="text-cyan-300">web/js_bridge.ts</code> exposes a global
+        <code className="text-cyan-300"> window.TDEngine</code> shim with
         <code className="text-cyan-300"> init / start / stop / shutdown / onReady / onLog</code> —
-        the same shape the original broken bridge pretended to provide.
+        the same shape the original broken bridge pretended to provide. Because browsers cannot
+        load <code className="text-cyan-300">.ts</code> files directly, you must compile it to
+        JavaScript first (e.g. <code className="text-cyan-300">tsc</code> or
+        <code className="text-cyan-300">esbuild</code>), then import the resulting
+        <code className="text-cyan-300">.js</code> file.
       </P>
+      <Code lang="bash">{`# Compile the bridge (and its engine deps) to a single JS file
+npx esbuild web/js_bridge.ts --bundle --format=iife --globalName=TDEngine \\
+  --outfile=public/td-engine.js
+
+# Or with the TypeScript compiler
+npx tsc web/js_bridge.ts --outDir public --module esnext --target es2020`}</Code>
       <Code lang="html">{`<canvas id="game-canvas" width="800" height="600"></canvas>
 <script type="module">
-  import { TDEngine } from './web/js_bridge.ts';
+  import { TDEngine } from './td-engine.js';   <!-- compiled, not .ts -->
   TDEngine.onLog(m => console.log(m));
   await TDEngine.init('game-canvas');
   TDEngine.start();
 </script>`}</Code>
+      <P>
+        <span className="text-amber-300 font-semibold">Note:</span> If you're using Vite
+        (as this repo does), you don't need the shim at all — just import
+        <code className="text-cyan-300"> Engine</code> directly from
+        <code className="text-cyan-300"> ./web/engine/engine</code> and Vite will bundle it.
+      </P>
     </div>
   );
 }

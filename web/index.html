@@ -2,68 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TD Engine — Web Player</title>
-    <link rel="stylesheet" href="style.css">
+    <!--
+      The standalone web player used to live here with an inline
+      `await import('./js_bridge.ts')` module script. That worked in
+      `vite dev` (where Vite transforms .ts on the fly) but broke in
+      production because Vite only builds the root index.html as an
+      entry — web/index.html was never processed, so the browser
+      tried to fetch `./js_bridge.ts` as a raw file and failed with
+      "Failed to fetch dynamically imported module".
+
+      The game now lives inside the React app at the repo root
+      (src/GamePage.tsx -> web/game/pong.ts). Redirect there.
+    -->
+    <meta http-equiv="refresh" content="0; url=../">
+    <title>TD Engine — Redirecting</title>
+    <script>window.location.replace('../');</script>
 </head>
 <body>
-    <!-- Loading screen -->
-    <div id="loading">
-        <h1>TD Engine</h1>
-        <p>Loading game engine...</p>
-        <div id="progress-bar">
-            <div id="progress-fill"></div>
-        </div>
-        <p id="loading-status">Initializing WebGL2...</p>
-    </div>
-
-    <!-- Game canvas -->
-    <canvas id="game-canvas" width="800" height="600"></canvas>
-
-    <!-- Controls overlay -->
-    <div id="overlay">
-        <span>Arrow Keys / WASD — Move</span>
-        <span>Space — Jump</span>
-        <span>Escape — Pause</span>
-    </div>
-
-    <!--
-      Fixed: web/index.html previously loaded wasm/js_bridge.js, which never
-      actually loaded a WASM module and left the canvas blank. The bridge is
-      now a real TypeScript engine implementation (web/engine/) loaded via
-      Vite module script.
-    -->
-    <script type="module">
-        const loadingEl = document.getElementById('loading');
-        const statusEl = document.getElementById('loading-status');
-        const progressEl = document.getElementById('progress-fill');
-
-        try {
-            const { TDEngine } = await import('./js_bridge.ts');
-
-            TDEngine.onLog((msg) => console.log('[Engine]', msg));
-
-            TDEngine.onReady(() => {
-                loadingEl.style.opacity = '0';
-                setTimeout(() => { loadingEl.style.display = 'none'; }, 500);
-                TDEngine.start();
-            });
-
-            // Visual progress while Vite evaluates the module
-            let p = 0;
-            const iv = setInterval(() => {
-                p = Math.min(p + 15, 90);
-                if (progressEl) progressEl.style.width = p + '%';
-                if (p >= 90) clearInterval(iv);
-            }, 80);
-
-            statusEl.textContent = 'Initializing engine...';
-            await TDEngine.init('game-canvas');
-            if (progressEl) progressEl.style.width = '100%';
-        } catch (error) {
-            statusEl.textContent = 'Error: ' + error.message;
-            console.error('Engine initialization failed:', error);
-        }
-    </script>
+    <p>Redirecting to <a href="../">TD Engine home</a>…</p>
 </body>
 </html>
