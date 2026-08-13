@@ -35,6 +35,9 @@ jobs:
           test -f web/td-engine.js
           test -f web/td-engine.wasm
 
+      - name: Stage JS bridge into web/
+        run: cp wasm/js_bridge.js web/js_bridge.js
+
       - name: Upload WASM bundle
         uses: actions/upload-artifact@v4
         with:
@@ -44,8 +47,8 @@ jobs:
             web/td-engine.wasm
             web/index.html
             web/style.css
+            web/js_bridge.js
             web/examples/
-            wasm/js_bridge.js
           if-no-files-found: error
 
       - name: Deploy web player to GitHub Pages

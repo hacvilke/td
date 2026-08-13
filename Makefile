@@ -148,10 +148,12 @@ web: $(WEB_DIR)/td-engine.js
 $(WEB_DIR)/td-engine.js: $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC)
 	@mkdir -p $(WEB_DIR)
 	$(EMXX) $(EMCCFLAGS) $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC) -o $(WEB_DIR)/td-engine.js
+	@cp wasm/js_bridge.js $(WEB_DIR)/js_bridge.js
 	@echo ""
 	@echo "WebAssembly build complete:"
 	@echo "  $(WEB_DIR)/td-engine.js   (emcc glue)"
 	@echo "  $(WEB_DIR)/td-engine.wasm (binary)"
+	@echo "  $(WEB_DIR)/js_bridge.js   (TDBridge, copied from wasm/)"
 	@echo ""
 	@echo "To run locally:"
 	@echo "  cd web && python3 -m http.server 8000"

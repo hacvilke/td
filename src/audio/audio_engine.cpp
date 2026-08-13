@@ -1,6 +1,8 @@
 #include "audio_engine.h"
 #include "../core/logger.h"
 #include <cstring>
+#include <cstdlib>
+#include <cstdio>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
