@@ -2,11 +2,20 @@
 #include "../core/logger.h"
 #include <cstring>
 
+#ifdef __EMSCRIPTEN__
+// WebAssembly build: Emscripten provides GL functions as statically-linked
+// symbols from <GLES3/gl3.h> when the project is linked with -s USE_WEBGL2=1.
+// We populate the GLFunctions struct by taking the address of each symbol.
+#include <GLES3/gl3.h>
+#else
+// Desktop (Win32) build: load GL function pointers at runtime via
+// wglGetProcAddress / GetProcAddress(opengl32.dll).
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 #include <GL/gl.h>
+#endif
 
 namespace td {
 
@@ -17,7 +26,132 @@ Renderer& Renderer::get() {
     return s_instance;
 }
 
-// Helper macro for loading GL functions
+#ifdef __EMSCRIPTEN__
+// -----------------------------------------------------------------------------
+// WebAssembly: GL functions are real symbols provided by Emscripten's GL shim.
+// We just take their addresses. No runtime loading needed.
+// -----------------------------------------------------------------------------
+#define EM_ASSIGN(name) gl.name = (decltype(gl.name))::name;
+
+bool Renderer::loadGLFunctions() {
+    // Basic
+    EM_ASSIGN(glViewport);
+    EM_ASSIGN(glClear);
+    EM_ASSIGN(glClearColor);
+    EM_ASSIGN(glEnable);
+    EM_ASSIGN(glDisable);
+    EM_ASSIGN(glBlendFunc);
+    EM_ASSIGN(glDepthFunc);
+    EM_ASSIGN(glCullFace);
+    EM_ASSIGN(glFrontFace);
+    EM_ASSIGN(glDepthMask);
+    // glPolygonMode is not available in WebGL - leave null (setWireframe no-ops).
+    gl.glPolygonMode = nullptr;
+    EM_ASSIGN(glLineWidth);
+    EM_ASSIGN(glGetString);
+    EM_ASSIGN(glGetIntegerv);
+    EM_ASSIGN(glGetError);
+
+    // Textures
+    EM_ASSIGN(glGenTextures);
+    EM_ASSIGN(glDeleteTextures);
+    EM_ASSIGN(glBindTexture);
+    EM_ASSIGN(glTexImage2D);
+    EM_ASSIGN(glTexSubImage2D);
+    EM_ASSIGN(glTexParameteri);
+    EM_ASSIGN(glTexParameterfv);
+    EM_ASSIGN(glActiveTexture);
+    EM_ASSIGN(glGenerateMipmap);
+
+    // Buffers
+    EM_ASSIGN(glGenBuffers);
+    EM_ASSIGN(glDeleteBuffers);
+    EM_ASSIGN(glBindBuffer);
+    EM_ASSIGN(glBufferData);
+    EM_ASSIGN(glBufferSubData);
+    // glMapBuffer / glUnmapBuffer are not available in WebGL 1; in WebGL 2 they
+    // exist as glMapBufferRange / glUnmapBuffer. Leave them null for now - the
+    // engine doesn't use them on the sprite/mesh paths.
+    gl.glMapBuffer   = nullptr;
+    gl.glUnmapBuffer = nullptr;
+
+    // Vertex Arrays
+    EM_ASSIGN(glGenVertexArrays);
+    EM_ASSIGN(glDeleteVertexArrays);
+    EM_ASSIGN(glBindVertexArray);
+    EM_ASSIGN(glEnableVertexAttribArray);
+    EM_ASSIGN(glDisableVertexAttribArray);
+    EM_ASSIGN(glVertexAttribPointer);
+    EM_ASSIGN(glVertexAttribIPointer);
+
+    // Drawing
+    EM_ASSIGN(glDrawArrays);
+    EM_ASSIGN(glDrawElements);
+    EM_ASSIGN(glDrawArraysInstanced);
+    EM_ASSIGN(glDrawElementsInstanced);
+
+    // Shaders
+    EM_ASSIGN(glCreateShader);
+    EM_ASSIGN(glDeleteShader);
+    EM_ASSIGN(glShaderSource);
+    EM_ASSIGN(glCompileShader);
+    EM_ASSIGN(glGetShaderiv);
+    EM_ASSIGN(glGetShaderInfoLog);
+
+    // Programs
+    EM_ASSIGN(glCreateProgram);
+    EM_ASSIGN(glDeleteProgram);
+    EM_ASSIGN(glAttachShader);
+    EM_ASSIGN(glDetachShader);
+    EM_ASSIGN(glLinkProgram);
+    EM_ASSIGN(glUseProgram);
+    EM_ASSIGN(glGetProgramiv);
+    EM_ASSIGN(glGetProgramInfoLog);
+
+    // Uniforms
+    EM_ASSIGN(glGetUniformLocation);
+    EM_ASSIGN(glUniform1f);
+    EM_ASSIGN(glUniform2f);
+    EM_ASSIGN(glUniform3f);
+    EM_ASSIGN(glUniform4f);
+    EM_ASSIGN(glUniform1i);
+    EM_ASSIGN(glUniform2i);
+    EM_ASSIGN(glUniform3i);
+    EM_ASSIGN(glUniform4i);
+    EM_ASSIGN(glUniform1fv);
+    EM_ASSIGN(glUniform2fv);
+    EM_ASSIGN(glUniform3fv);
+    EM_ASSIGN(glUniform4fv);
+    EM_ASSIGN(glUniformMatrix3fv);
+    EM_ASSIGN(glUniformMatrix4fv);
+
+    // Framebuffers
+    EM_ASSIGN(glGenFramebuffers);
+    EM_ASSIGN(glDeleteFramebuffers);
+    EM_ASSIGN(glBindFramebuffer);
+    EM_ASSIGN(glFramebufferTexture2D);
+    EM_ASSIGN(glCheckFramebufferStatus);
+
+    // Renderbuffers
+    EM_ASSIGN(glGenRenderbuffers);
+    EM_ASSIGN(glDeleteRenderbuffers);
+    EM_ASSIGN(glBindRenderbuffer);
+    EM_ASSIGN(glRenderbufferStorage);
+    EM_ASSIGN(glFramebufferRenderbuffer);
+
+    // Verify critical functions loaded
+    if (!gl.glGenBuffers || !gl.glGenVertexArrays || !gl.glCreateShader || !gl.glCreateProgram) {
+        TD_LOG_ERROR("Failed to load required OpenGL functions");
+        return false;
+    }
+    return true;
+}
+
+#undef EM_ASSIGN
+
+#else // !__EMSCRIPTEN__
+
+// Helper macro for loading GL functions (Win32 desktop)
 #define LOAD_GL_FUNC(name) \
     gl.name = (decltype(gl.name))wglGetProcAddress(#name); \
     if (!gl.name) { \
@@ -136,6 +270,8 @@ bool Renderer::loadGLFunctions() {
     
     return true;
 }
+
+#endif // __EMSCRIPTEN__
 
 bool Renderer::init() {
     if (m_initialized) {

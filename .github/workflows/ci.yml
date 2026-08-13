@@ -1,102 +1,64 @@
-name: CI — Build & Deploy
+name: CI — Build (Desktop + WebAssembly)
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
   pull_request:
-    branches: [main, master]
+    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
-  contents: write   # required for peaceiris/actions-gh-pages to push to gh-pages
-  pages: write
-  id-token: write
-
-# Allow only one concurrent deployment, don't cancel in-progress runs.
-concurrency:
-  group: pages
-  cancel-in-progress: false
+  contents: write   # required for uploading release artifacts
 
 jobs:
-  build:
-    name: Typecheck & Build (Web)
+  # ---------------------------------------------------------------------------
+  # WebAssembly build - runs on Ubuntu with Emscripten.
+  # Produces web/td-engine.js + web/td-engine.wasm, uploads as a workflow
+  # artifact so users can download and run it in their browser.
+  # ---------------------------------------------------------------------------
+  wasm:
+    name: Build WebAssembly
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
         with:
-          node-version: '24'
+          version: latest
+          actions-cache-folder: emsdk-cache
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Verify emcc
+        run: emcc --version
 
-      - name: Typecheck
-        run: npx tsc --noEmit
+      - name: Build WASM bundle
+        run: make web
 
-      - name: Build
-        run: npm run build
+      - name: Verify outputs
+        run: |
+          ls -la web/td-engine.js web/td-engine.wasm
+          test -f web/td-engine.js
+          test -f web/td-engine.wasm
 
-      - name: Upload build artifact
+      - name: Upload WASM bundle
         uses: actions/upload-artifact@v4
         with:
-          name: td-engine-dist
-          path: dist/
-          retention-days: 14
+          name: td-engine-wasm
+          path: |
+            web/td-engine.js
+            web/td-engine.wasm
+            web/index.html
+            web/style.css
+            web/examples/
+            wasm/js_bridge.js
+          if-no-files-found: error
 
-      - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist/
-
-  deploy-pages:
-    name: Deploy via GitHub Actions (Pages API)
-    needs: build
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-  deploy-branch:
-    name: Deploy to gh-pages branch (fallback)
-    needs: build
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Build
-        run: |
-          npm install --no-audit --no-fund
-          npm run build
-
-      # Push the built dist/ to the gh-pages branch. This works even when
-      # the repo's Pages setting is "Deploy from a branch" (pointed at
-      # gh-pages) instead of "GitHub Actions". Use the PAT for authentication
-      # so the push triggers any downstream Pages rebuild.
-      - name: Deploy to gh-pages branch
+      - name: Deploy web player to GitHub Pages
+        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
+          publish_dir: web
           publish_branch: gh-pages
           force_orphan: true
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Deploy: ${{ github.sha }}'

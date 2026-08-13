@@ -2,11 +2,23 @@
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
+#include <ctime>
 
+#ifdef __EMSCRIPTEN__
+// WebAssembly: use POSIX time + ANSI color escapes (Emscripten provides
+// gettimeofday / localtime_r / printf to the browser console via Module.print).
+#include <sys/time.h>
+#include <unistd.h>
+#define TD_COLOR_RESET   "\033[0m"
+#define TD_COLOR_INFO    "\033[37m"
+#define TD_COLOR_WARN    "\033[33m"
+#define TD_COLOR_ERROR   "\033[31m"
+#else
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#endif
 
 namespace td {
 
@@ -43,12 +55,21 @@ bool Logger::init(const char* logFilePath) {
     // Write header
     fprintf((FILE*)m_logFile, "=== TD Engine Log ===\n");
     fprintf((FILE*)m_logFile, "Started at: ");
-    
+
+#ifdef __EMSCRIPTEN__
+    time_t now = time(nullptr);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    fprintf((FILE*)m_logFile, "%04d-%02d-%02d %02d:%02d:%02d\n\n",
+            tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+            tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+#else
     SYSTEMTIME st;
     GetLocalTime(&st);
     fprintf((FILE*)m_logFile, "%04d-%02d-%02d %02d:%02d:%02d\n\n",
             st.wYear, st.wMonth, st.wDay,
             st.wHour, st.wMinute, st.wSecond);
+#endif
     fflush((FILE*)m_logFile);
     
     info("Logger initialized");
@@ -64,12 +85,24 @@ void Logger::shutdown() {
 }
 
 void Logger::getTimestamp(int& hour, int& min, int& sec, int& ms) {
+#ifdef __EMSCRIPTEN__
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    time_t now = tv.tv_sec;
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    hour = tmv.tm_hour;
+    min  = tmv.tm_min;
+    sec  = tmv.tm_sec;
+    ms   = (int)(tv.tv_usec / 1000);
+#else
     SYSTEMTIME st;
     GetLocalTime(&st);
     hour = st.wHour;
     min = st.wMinute;
     sec = st.wSecond;
     ms = st.wMilliseconds;
+#endif
 }
 
 void Logger::log(LogLevel level, const char* format, ...) {
@@ -166,7 +199,18 @@ void Logger::logInternal(LogLevel level, const char* message) {
     
     // Console output
     if (m_consoleLoggingEnabled) {
-        // Set console color based on level
+#ifdef __EMSCRIPTEN__
+        // ANSI color escapes - Emscripten forwards printf to Module.print,
+        // which the JS bridge pipes to the on-screen console + browser console.
+        const char* colorCode;
+        switch (level) {
+            case LogLevel::Warning: colorCode = TD_COLOR_WARN;  break;
+            case LogLevel::Error:   colorCode = TD_COLOR_ERROR; break;
+            default:                colorCode = TD_COLOR_INFO;  break;
+        }
+        printf("%s%s%s\n", colorCode, formattedMsg, TD_COLOR_RESET);
+#else
+        // Win32: SetConsoleTextAttribute for colored output.
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         WORD color;
         switch (level) {
@@ -182,6 +226,7 @@ void Logger::logInternal(LogLevel level, const char* message) {
         SetConsoleTextAttribute(hConsole, color);
         printf("%s\n", formattedMsg);
         SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+#endif
     }
     
     // File output

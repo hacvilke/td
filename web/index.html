@@ -2,23 +2,246 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <!--
-      The standalone web player used to live here with an inline
-      `await import('./js_bridge.ts')` module script. That worked in
-      `vite dev` (where Vite transforms .ts on the fly) but broke in
-      production because Vite only builds the root index.html as an
-      entry — web/index.html was never processed, so the browser
-      tried to fetch `./js_bridge.ts` as a raw file and failed with
-      "Failed to fetch dynamically imported module".
-
-      The game now lives inside the React app at the repo root
-      (src/GamePage.tsx -> web/game/pong.ts). Redirect there.
-    -->
-    <meta http-equiv="refresh" content="0; url=../">
-    <title>TD Engine — Redirecting</title>
-    <script>window.location.replace('../');</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser.">
+    <title>TD Engine - Web Player</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <p>Redirecting to <a href="../">TD Engine home</a>…</p>
+
+    <!-- ====================================================================== -->
+    <!-- Loading Screen                                                          -->
+    <!-- ====================================================================== -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <div class="logo-mark">TD</div>
+                <div class="logo-text">TD ENGINE</div>
+            </div>
+            <div class="loading-bar">
+                <div id="progress-bar-fill" class="progress-bar-fill"></div>
+            </div>
+            <div id="loading-detail" class="loading-detail">Initializing...</div>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Game Canvas                                                             -->
+    <!-- ====================================================================== -->
+    <canvas id="game-canvas" width="800" height="600" style="display: none;"></canvas>
+
+    <!-- ====================================================================== -->
+    <!-- HUD - FPS counter                                                       -->
+    <!-- ====================================================================== -->
+    <div id="fps-counter" style="display: none;">FPS: 0</div>
+
+    <!-- ====================================================================== -->
+    <!-- Controls Overlay - shown before the game starts                         -->
+    <!-- ====================================================================== -->
+    <div id="controls-overlay" style="display: none;">
+        <div class="controls-card">
+            <h1 class="controls-title">TD Engine</h1>
+            <p class="controls-subtitle">WebAssembly Runtime</p>
+
+            <div class="controls-grid">
+                <div class="control-row">
+                    <span class="key">W A S D</span>
+                    <span class="action">Move</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">&larr; &uarr; &darr; &rarr;</span>
+                    <span class="action">Move (alt)</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">Space</span>
+                    <span class="action">Action / Jump</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">Shift</span>
+                    <span class="action">Sprint</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">Mouse</span>
+                    <span class="action">Look / Aim</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">L-Click</span>
+                    <span class="action">Primary</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">R-Click</span>
+                    <span class="action">Secondary</span>
+                </div>
+                <div class="control-row">
+                    <span class="key">Esc</span>
+                    <span class="action">Pause</span>
+                </div>
+            </div>
+
+            <button id="start-button" class="start-button">Start</button>
+            <p class="controls-hint">Click anywhere to begin</p>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Pause Overlay                                                           -->
+    <!-- ====================================================================== -->
+    <div id="pause-overlay" style="display: none;">
+        <div class="pause-card">
+            <h2 class="pause-title">Paused</h2>
+            <button id="resume-button" class="resume-button">Resume</button>
+            <button id="restart-button" class="restart-button">Restart Scene</button>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Engine Console - mirrors td::Logger output                              -->
+    <!-- ====================================================================== -->
+    <div id="engine-console" style="display: none;">
+        <div id="console-header">
+            <span>TD ENGINE CONSOLE</span>
+            <button id="console-close" title="Hide console">&times;</button>
+        </div>
+        <div id="console-output"></div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Scripts                                                                 -->
+    <!-- ====================================================================== -->
+
+    <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
+    <script src="td-engine.js"></script>
+
+    <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
+    <script src="../wasm/js_bridge.js"></script>
+
+    <!-- Sample game - demonstrates the JS-on-WASM workflow. -->
+    <script src="examples/pong.js"></script>
+
+    <script>
+        (async function () {
+            const loadingScreen    = document.getElementById('loading-screen');
+            const loadingDetail    = document.getElementById('loading-detail');
+            const progressBarFill  = document.getElementById('progress-bar-fill');
+            const controlsOverlay  = document.getElementById('controls-overlay');
+            const gameCanvas       = document.getElementById('game-canvas');
+            const fpsCounter       = document.getElementById('fps-counter');
+            const consoleOutput    = document.getElementById('console-output');
+            const engineConsole    = document.getElementById('engine-console');
+
+            // -----------------------------------------------------------------
+            // Wire engine log -> on-screen console
+            // -----------------------------------------------------------------
+            const consoleLines = [];
+            const MAX_CONSOLE_LINES = 200;
+
+            function appendConsoleLine(level, message) {
+                const div = document.createElement('div');
+                div.className = 'log-' + level;
+                const time = new Date().toLocaleTimeString();
+                div.textContent = '[' + time + '] ' + message;
+                consoleOutput.appendChild(div);
+                consoleLines.push(div);
+                if (consoleLines.length > MAX_CONSOLE_LINES) {
+                    const old = consoleLines.shift();
+                    if (old.parentNode) old.parentNode.removeChild(old);
+                }
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
+
+            TDBridge.onLog(function (entry) {
+                appendConsoleLine(entry.level, entry.message);
+                engineConsole.style.display = 'flex';
+            });
+
+            document.getElementById('console-close').addEventListener('click', function () {
+                engineConsole.style.display = 'none';
+            });
+
+            // -----------------------------------------------------------------
+            // Boot sequence
+            // -----------------------------------------------------------------
+            loadingDetail.textContent = 'Loading WebAssembly module...';
+            progressBarFill.style.width = '20%';
+
+            TDBridge.onReady(function () {
+                loadingDetail.textContent = 'Engine ready!';
+                progressBarFill.style.width = '100%';
+
+                setTimeout(function () {
+                    loadingScreen.style.display = 'none';
+                    controlsOverlay.style.display = 'flex';
+                    gameCanvas.style.display = 'block';
+                }, 500);
+            });
+
+            try {
+                await TDBridge.init('game-canvas');
+            } catch (err) {
+                loadingDetail.textContent = 'Error: ' + err.message;
+                progressBarFill.style.width = '100%';
+                progressBarFill.classList.add('error');
+                console.error('TD Engine failed to load:', err);
+                return;
+            }
+
+            // -----------------------------------------------------------------
+            // FPS counter
+            // -----------------------------------------------------------------
+            let frameCount = 0;
+            let lastFpsTime = performance.now();
+            function updateFPS() {
+                frameCount++;
+                const now = performance.now();
+                if (now - lastFpsTime >= 1000) {
+                    fpsCounter.textContent = 'FPS: ' + frameCount;
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+                requestAnimationFrame(updateFPS);
+            }
+            updateFPS();
+
+            // -----------------------------------------------------------------
+            // Start / pause UI
+            // -----------------------------------------------------------------
+            function startGame() {
+                controlsOverlay.style.display = 'none';
+                fpsCounter.style.display = 'block';
+                TDBridge.resumeAudio();
+
+                // Launch the sample game (defined in examples/pong.js).
+                if (typeof window.startTDExample === 'function') {
+                    window.startTDExample();
+                }
+            }
+
+            document.getElementById('start-button').addEventListener('click', function (e) {
+                e.stopPropagation();
+                startGame();
+            });
+            controlsOverlay.addEventListener('click', startGame);
+
+            document.addEventListener('keydown', function (e) {
+                if (e.keyCode === 0x1B /*Escape*/) {
+                    const pause = document.getElementById('pause-overlay');
+                    pause.style.display = (pause.style.display === 'none' || !pause.style.display)
+                        ? 'flex' : 'none';
+                }
+            });
+
+            document.getElementById('resume-button').addEventListener('click', function () {
+                document.getElementById('pause-overlay').style.display = 'none';
+                TDBridge.resumeAudio();
+            });
+
+            document.getElementById('restart-button').addEventListener('click', function () {
+                document.getElementById('pause-overlay').style.display = 'none';
+                if (typeof window.restartTDExample === 'function') {
+                    window.restartTDExample();
+                }
+            });
+        })();
+    </script>
 </body>
 </html>

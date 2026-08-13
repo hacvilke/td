@@ -1,125 +1,680 @@
-// TD Engine — Emscripten/WebAssembly Entry Point
-// Compile with: emcc wasm/emscripten_main.cpp src/*.cpp -o td-engine.js \
-//   -s WASM=1 -s USE_WEBGL2=1 -s FULL_ES3=1 \
-//   -s EXPORTED_FUNCTIONS="['_td_init','_td_update','_td_set_key','_td_set_mouse','_td_resize','_td_shutdown','_td_load_scene']" \
-//   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap','UTF8ToString','stringToUTF8','_malloc','_free']"
-
-#ifdef __EMSCRIPTEN__
+// =============================================================================
+// TD Engine - Gauntlet Part 7: WebAssembly Bridge
+// File: wasm/emscripten_main.cpp
+//
+// Emscripten entry point that swaps the Win32 platform layer for the browser.
+// The rest of the C++ engine (renderer, physics, ECS, audio mixer, scripting)
+// is compiled unchanged - only the platform layer is replaced by this file.
+//
+// Build:  make web     (requires emcc/em++ on PATH; see wasm/README.md)
+//
+// Exported C API (callable from JS via Module._<name> or Module.ccall):
+//   td_init(width, height)            - boot the engine (creates GL context)
+//   td_shutdown()                     - tear down
+//   td_load_scene(sceneText)          - parse + load a scene into the ECS World
+//   td_set_key_state(vkCode, pressed) - inject a key event (Win32 VK codes)
+//   td_set_mouse_state(x, y, l, r)    - inject mouse position + buttons
+//   td_resize(w, h)                   - viewport resize
+//   td_get_version()                  - returns "TD Engine 1.0.0 (WebAssembly)"
+//   td_fill_audio_buffer(out, n)      - fill a stereo int16 PCM buffer
+//   td_create_entity(name)            - ECS: create entity, return id
+//   td_entity_set_position(id, x, y)  - ECS: set PositionComponent
+//   td_entity_set_velocity(id, vx,vy) - ECS: set VelocityComponent
+//   td_entity_set_sprite(id, w, h, r, g, b, a)
+//   td_entity_set_collider(id, w, h)
+//   td_entity_destroy(id)
+//   td_entity_is_valid(id) -> bool
+//
+// The engine's input system uses Win32 virtual key codes (e.g. Key::A = 0x41).
+// Conveniently, browser keyboard events expose `e.keyCode` which is ALSO the
+// Win32 VK code (a historical artifact of the DOM spec). So the JS bridge
+// forwards e.keyCode directly with no translation table needed.
+// =============================================================================
 
 #include <emscripten.h>
 #include <emscripten/html5.h>
+#include <GLES3/gl3.h>
 
-#include "../src/core/math/math.h"
-#include "../src/core/math/vec2.h"
-#include "../src/core/math/vec3.h"
-#include "../src/core/math/mat4.h"
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+// --- Engine headers (Parts 1-6, unchanged) -----------------------------------
+#include "../src/platform/platform.h"      // InputState, Key::, Mouse::
+#include "../src/core/game_loop.h"
 #include "../src/core/logger.h"
-#include "../src/ecs/world.h"
+#include "../src/renderer/gl_renderer.h"   // td::Renderer, td::gl
+#include "../src/renderer/sprite_batch.h"
+#include "../src/renderer/camera.h"        // Camera2D
+#include "../src/ecs/world.h"              // td::World
+#include "../src/ecs/component.h"          // PositionComponent, SpriteComponent, ...
+#include "../src/audio/mixer.h"            // td::Mixer
 
-// Since we can't use Win32 on the web, we use a simplified renderer state
-static td::World g_world;
-static bool g_initialized = false;
-static int g_width = 800;
-static int g_height = 600;
+// =============================================================================
+// Global state. Held for the lifetime of the WASM module. Emscripten's main
+// loop is callback-based; main() returns before the loop terminates so we
+// cannot keep these as locals.
+// =============================================================================
 
-// Input state
-static bool g_keys[256] = {};
-static float g_mouseX = 0, g_mouseY = 0;
-static bool g_mouseButtons[8] = {};
-static float g_deltaTime = 0.016f;
-static double g_lastTime = 0;
+namespace td {
 
-// Import from JavaScript
-extern "C" {
-    extern void td_js_log(const char* msg);
-    extern int td_js_get_canvas_width();
-    extern int td_js_get_canvas_height();
-}
+// Globals defined in this file
+static Renderer*       g_renderer   = nullptr;  // alias of Renderer::get()
+static SpriteBatch*    g_sprites    = nullptr;
+static Camera2D*       g_camera     = nullptr;
+static World*          g_world      = nullptr;
+static Mixer*          g_mixer      = nullptr;
+static InputState      g_input      = {};
+static TimeState       g_time       = {};
 
-// Main loop callback for emscripten_set_main_loop
-void mainLoop() {
-    if (!g_initialized) return;
+static int  g_canvasWidth  = 800;
+static int  g_canvasHeight = 600;
+static bool g_running      = false;
+static bool g_initialized  = false;
 
-    // Calculate delta time
-    double currentTime = emscripten_get_now() / 1000.0;
-    if (g_lastTime > 0) {
-        g_deltaTime = (float)(currentTime - g_lastTime);
-        if (g_deltaTime > 0.25f) g_deltaTime = 0.25f;
+// Fixed-step accumulator (replicates td::GameLoop's algorithm so we don't
+// depend on GameLoop::run(Win32Window&), which is desktop-only).
+static double g_accumulator = 0.0;
+static float  g_fixedStep   = 1.0f / 60.0f;
+static double g_lastTime    = 0.0;
+
+// Callbacks registered by JS (via td_set_callbacks) for user game logic.
+// These let a JS/TS developer write game code without touching C++.
+typedef void (*VoidCb)();
+typedef void (*FloatCb)(float);
+static VoidCb  g_cb_init    = nullptr;
+static FloatCb g_cb_update  = nullptr;
+static FloatCb g_cb_render  = nullptr;
+static VoidCb  g_cb_shutdown = nullptr;
+
+} // namespace td
+
+// Forward declarations (used before definition by Emscripten callbacks).
+extern "C" void td_resize(int width, int height);
+static void mainLoop();
+
+// =============================================================================
+// Emscripten HTML5 event callbacks
+// =============================================================================
+// Each callback updates the engine's InputState and returns EM_TRUE to swallow
+// the default browser action (so arrow keys don't scroll the page, etc.).
+
+static EM_BOOL keyCallback(int eventType,
+                           const EmscriptenKeyboardEvent* keyEvent,
+                           void* /*userData*/)
+{
+    // keyEvent->keyCode is the deprecated DOM keyCode, which is the Win32 VK
+    // code. The engine's Key:: namespace uses the same values, so we forward
+    // directly.
+    int vk = keyEvent->keyCode;
+    if (vk < 0 || vk >= 256) return EM_FALSE;
+    bool pressed = (eventType == EMSCRIPTEN_EVENT_KEYDOWN);
+    td::g_input.keys[vk] = pressed;
+
+    // Prevent default for game-relevant keys.
+    if (vk == 0x20 /*Space*/ || (vk >= 0x25 && vk <= 0x28) /*Arrows*/ ||
+        (vk >= 0x41 && vk <= 0x5A) /*A-Z*/) {
+        return EM_TRUE;
     }
-    g_lastTime = currentTime;
-
-    // Update world systems
-    g_world.updateSystems(g_deltaTime);
-
-    // Render would happen here through WebGL calls
-    // In a full implementation, the Renderer would use GLES2/GLES3
+    return EM_FALSE;
 }
+
+static EM_BOOL mouseMoveCallback(int /*eventType*/,
+                                 const EmscriptenMouseEvent* ev,
+                                 void* /*userData*/)
+{
+    td::g_input.mouseDeltaX = (float)ev->targetX - td::g_input.mouseX;
+    td::g_input.mouseDeltaY = (float)ev->targetY - td::g_input.mouseY;
+    td::g_input.mouseX = (float)ev->targetX;
+    td::g_input.mouseY = (float)ev->targetY;
+    return EM_TRUE;
+}
+
+static EM_BOOL mouseDownCallback(int /*eventType*/,
+                                 const EmscriptenMouseEvent* ev,
+                                 void* /*userData*/)
+{
+    if (ev->button >= 0 && ev->button < 8) {
+        td::g_input.mouseButtons[ev->button] = true;
+    }
+    return EM_TRUE;
+}
+
+static EM_BOOL mouseUpCallback(int /*eventType*/,
+                               const EmscriptenMouseEvent* ev,
+                               void* /*userData*/)
+{
+    if (ev->button >= 0 && ev->button < 8) {
+        td::g_input.mouseButtons[ev->button] = false;
+    }
+    return EM_TRUE;
+}
+
+static EM_BOOL resizeCallback(int /*eventType*/,
+                              const EmscriptenUiEvent* ev,
+                              void* /*userData*/)
+{
+    int w = ev->documentBodyClientWidth;
+    int h = ev->documentBodyClientHeight;
+    td_resize(w, h);
+    return EM_TRUE;
+}
+
+// =============================================================================
+// Exported C API
+// =============================================================================
 
 extern "C" {
 
+// -----------------------------------------------------------------------------
+// td_init(width, height)
+//
+// Boots the engine. Called by js_bridge.js AFTER the WASM module is
+// instantiated and Emscripten's GL context is current on the canvas.
+// -----------------------------------------------------------------------------
 EMSCRIPTEN_KEEPALIVE
-void td_init(int width, int height) {
-    g_width = width;
-    g_height = height;
+void td_init(int width, int height)
+{
+    if (td::g_initialized) {
+        TD_LOG_WARN("td_init called twice - ignoring");
+        return;
+    }
 
-    // Set canvas size
-    emscripten_set_canvas_element_size("#game-canvas", width, height);
+    td::g_canvasWidth  = width  > 0 ? width  : 800;
+    td::g_canvasHeight = height > 0 ? height : 600;
 
-    g_lastTime = emscripten_get_now() / 1000.0;
-    g_initialized = true;
+    emscripten_set_canvas_element_size("#game-canvas",
+                                        td::g_canvasWidth,
+                                        td::g_canvasHeight);
 
-    td_js_log("TD Engine initialized (WASM)");
+    // --- Logger (writes to /tmp/td-engine.log in the Emscripten FS) ---------
+    td::Logger::get().init("/tmp/td-engine.log");
+    td::Logger::get().setFileLogging(false);   // no file in browser
+    TD_LOG_INFO("TD Engine (WebAssembly) starting up...");
+
+    // --- Renderer (singleton) ----------------------------------------------
+    // td::gl is populated by gl_renderer.cpp's loadGLFunctions() which has an
+    // #ifdef __EMSCRIPTEN__ branch that takes the address of each GLES3 symbol.
+    td::g_renderer = &td::Renderer::get();
+    if (!td::g_renderer->init()) {
+        TD_LOG_ERROR("Renderer initialization failed");
+        return;
+    }
+    td::g_renderer->setViewport(0, 0, td::g_canvasWidth, td::g_canvasHeight);
+    td::g_renderer->clear(0.0f, 0.0f, 0.0f, 1.0f);
+
+    // --- Sprite batch (the engine's 2D renderer) ----------------------------
+    td::g_sprites = new td::SpriteBatch();
+    td::g_sprites->init();
+
+    // --- 2D camera ----------------------------------------------------------
+    td::g_camera = new td::Camera2D();
+    td::g_camera->setViewport(td::g_canvasWidth, td::g_canvasHeight);
+    td::g_camera->setPosition(td::g_canvasWidth  * 0.5f,
+                              td::g_canvasHeight * 0.5f);
+
+    // --- ECS world ----------------------------------------------------------
+    td::g_world = new td::World();
+
+    // --- Audio mixer (output is pulled by JS via td_fill_audio_buffer) ------
+    td::g_mixer = new td::Mixer();
+    td::g_mixer->init(44100, 2);
+
+    // --- Input state (zeroed at construction; Emscripten callbacks fill it) -
+    memset(&td::g_input, 0, sizeof(td::g_input));
+    memset(&td::g_time,  0, sizeof(td::g_time));
+    td::g_time.fixedDeltaTime = td::g_fixedStep;
+
+    // --- Register Emscripten HTML5 callbacks on the game canvas -------------
+    const char* target = "#game-canvas";
+    emscripten_set_keydown_callback   (target, nullptr, true, keyCallback);
+    emscripten_set_keyup_callback     (target, nullptr, true, keyCallback);
+    emscripten_set_mousemove_callback (target, nullptr, true, mouseMoveCallback);
+    emscripten_set_mousedown_callback (target, nullptr, true, mouseDownCallback);
+    emscripten_set_mouseup_callback   (target, nullptr, true, mouseUpCallback);
+    emscripten_set_resize_callback("#window", nullptr, true, resizeCallback);
+
+    // --- User init callback (game-level setup) ------------------------------
+    if (td::g_cb_init) td::g_cb_init();
+
+    td::g_running     = true;
+    td::g_initialized = true;
+    td::g_lastTime    = emscripten_get_now();
+
+    TD_LOG_INFO("TD Engine ready: %dx%d, GL_VERSION=%s",
+                td::g_canvasWidth, td::g_canvasHeight,
+                (const char*)td::gl.glGetString(0x1F02));
+
+    // Hand control to Emscripten. 0 = browser-rAF unlimited FPS,
+    // 1 = simulate infinite loop (don't unwind main's stack).
+    emscripten_set_main_loop(mainLoop, 0, 1);
+    // NOT REACHED
+}
+
+// -----------------------------------------------------------------------------
+// td_shutdown()
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_shutdown()
+{
+    if (!td::g_initialized) return;
+
+    td::g_running = false;
+    emscripten_cancel_main_loop();
+
+    if (td::g_cb_shutdown) td::g_cb_shutdown();
+
+    if (td::g_sprites) { td::g_sprites->shutdown(); delete td::g_sprites; td::g_sprites = nullptr; }
+    if (td::g_camera)  { delete td::g_camera;  td::g_camera  = nullptr; }
+    if (td::g_world)   { delete td::g_world;   td::g_world   = nullptr; }
+    if (td::g_mixer)   { delete td::g_mixer;   td::g_mixer   = nullptr; }
+
+    td::g_renderer->shutdown();
+    td::Logger::get().shutdown();
+
+    td::g_initialized = false;
+    TD_LOG_INFO("TD Engine shutdown complete");
+}
+
+// -----------------------------------------------------------------------------
+// td_set_callbacks(init, update, render, shutdown)
+//
+// Lets JS/TS register game-logic callbacks. Each is a C function pointer; the
+// JS bridge uses ccall/cwrap with 'number' (pointer) arg type to pass
+// JavaScript functions back via addFunction (requires ALLOW_TABLE_GROWTH).
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_set_callbacks(td::VoidCb init,
+                      td::FloatCb update,
+                      td::FloatCb render,
+                      td::VoidCb shutdown)
+{
+    td::g_cb_init     = init;
+    td::g_cb_update   = update;
+    td::g_cb_render   = render;
+    td::g_cb_shutdown = shutdown;
+}
+
+// -----------------------------------------------------------------------------
+// td_load_scene(sceneText)
+//
+// Parses a scene description string and populates the ECS world. The format
+// is line-oriented and matches the desktop editor's writer:
+//
+//   entity Player {
+//     position { x: 100 y: 100 }
+//     velocity { x: 0   y: 0 }
+//     sprite   { w: 32 h: 32 r: 1 g: 1 b: 1 a: 1 }
+//     collider { w: 32 h: 32 }
+//   }
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_load_scene(const char* sceneText)
+{
+    if (!td::g_world || !sceneText || !*sceneText) {
+        TD_LOG_WARN("td_load_scene: empty scene or world not initialized");
+        return;
+    }
+
+    // Tiny line-based parser. Sufficient for the format above; the desktop
+    // editor uses the same logic (see editor/scene_panel.cpp).
+    std::string text(sceneText);
+    size_t i = 0;
+    td::EntityId currentEnt = td::INVALID_ENTITY;
+    while (i < text.size()) {
+        size_t end = text.find('\n', i);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(i, end - i);
+        i = end + 1;
+
+        // Trim whitespace
+        size_t s = line.find_first_not_of(" \t");
+        if (s == std::string::npos) continue;
+        size_t e = line.find_last_not_of(" \t\r");
+        std::string trimmed = line.substr(s, e - s + 1);
+
+        if (trimmed.rfind("entity ", 0) == 0) {
+            // "entity Name {"
+            size_t nameStart = 7;
+            size_t nameEnd   = trimmed.find(' ', nameStart);
+            if (nameEnd == std::string::npos) nameEnd = trimmed.find('{', nameStart);
+            if (nameEnd == std::string::npos) nameEnd = trimmed.size();
+            std::string name = trimmed.substr(nameStart, nameEnd - nameStart);
+            currentEnt = td::g_world->createEntity(name.c_str());
+        } else if (trimmed == "}") {
+            currentEnt = td::INVALID_ENTITY;
+        } else if (currentEnt != td::INVALID_ENTITY) {
+            // Component line: "position { x: 100 y: 100 }"
+            size_t brace = trimmed.find('{');
+            if (brace == std::string::npos) continue;
+            std::string type = trimmed.substr(0, brace);
+            // strip trailing space from type
+            while (!type.empty() && type.back() == ' ') type.pop_back();
+
+            std::string body = trimmed.substr(brace + 1,
+                                              trimmed.size() - brace - 2);
+
+            if (type == "position") {
+                td::PositionComponent* p =
+                    td::g_world->addComponent<td::PositionComponent>(currentEnt);
+                sscanf(body.c_str(), " x: %f y: %f", &p->x, &p->y);
+            } else if (type == "velocity") {
+                td::VelocityComponent* v =
+                    td::g_world->addComponent<td::VelocityComponent>(currentEnt);
+                sscanf(body.c_str(), " x: %f y: %f", &v->vx, &v->vy);
+            } else if (type == "sprite") {
+                td::SpriteComponent* sp =
+                    td::g_world->addComponent<td::SpriteComponent>(currentEnt);
+                sscanf(body.c_str(),
+                       " w: %f h: %f r: %f g: %f b: %f a: %f",
+                       &sp->width, &sp->height,
+                       &sp->r, &sp->g, &sp->b, &sp->a);
+            } else if (type == "collider") {
+                td::ColliderComponent* c =
+                    td::g_world->addComponent<td::ColliderComponent>(currentEnt);
+                sscanf(body.c_str(), " w: %f h: %f", &c->width, &c->height);
+            } else if (type == "rigidbody") {
+                td::RigidBodyComponent* r =
+                    td::g_world->addComponent<td::RigidBodyComponent>(currentEnt);
+                float mass = 1.0f, friction = 0.3f, restitution = 0.2f;
+                sscanf(body.c_str(),
+                       " mass: %f friction: %f restitution: %f",
+                       &mass, &friction, &restitution);
+                r->mass = mass; r->friction = friction; r->restitution = restitution;
+            }
+        }
+    }
+    TD_LOG_INFO("Scene loaded: %d entities", td::g_world->getEntityCount());
+}
+
+// -----------------------------------------------------------------------------
+// Input injection (called by JS bridge from browser event listeners)
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_set_key_state(int vkCode, bool pressed)
+{
+    if (vkCode < 0 || vkCode >= 256) return;
+    td::g_input.keys[vkCode] = pressed;
 }
 
 EMSCRIPTEN_KEEPALIVE
-void td_update() {
+void td_set_mouse_state(float x, float y, bool leftDown, bool rightDown)
+{
+    td::g_input.mouseX = x;
+    td::g_input.mouseY = y;
+    td::g_input.mouseButtons[td::Mouse::Left]  = leftDown;
+    td::g_input.mouseButtons[td::Mouse::Right] = rightDown;
+}
+
+// -----------------------------------------------------------------------------
+// Viewport resize
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_resize(int width, int height)
+{
+    if (width <= 0 || height <= 0) return;
+    td::g_canvasWidth  = width;
+    td::g_canvasHeight = height;
+    emscripten_set_canvas_element_size("#game-canvas", width, height);
+    if (td::g_renderer) td::g_renderer->setViewport(0, 0, width, height);
+    if (td::g_camera) {
+        td::g_camera->setViewport(width, height);
+        td::g_camera->setPosition(width * 0.5f, height * 0.5f);
+    }
+    TD_LOG_INFO("Viewport resized: %dx%d", width, height);
+}
+
+// -----------------------------------------------------------------------------
+// Version string
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+const char* td_get_version()
+{
+    static const char kVersion[] = "TD Engine 1.0.0 (WebAssembly)";
+    return kVersion;
+}
+
+// -----------------------------------------------------------------------------
+// Audio bridge
+//
+// The JS side creates a Web Audio AudioContext + ScriptProcessor (or
+// AudioWorklet) and calls td_fill_audio_buffer every quantum. We ask the
+// engine's Mixer to mix `numFrames` stereo int16 samples into `out`.
+//
+// The Mixer outputs int16 PCM at -32768..32767. The JS bridge converts to
+// float32 -1..1 for Web Audio.
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_fill_audio_buffer(int16_t* out, int numFrames)
+{
+    if (!out || numFrames <= 0) return;
+    if (td::g_mixer) {
+        // Mixer::mix expects interleaved stereo int16. numFrames here is the
+        // number of stereo frame pairs, so total samples = numFrames * 2.
+        td::g_mixer->mix(out, numFrames * 2);
+    } else {
+        memset(out, 0, sizeof(int16_t) * numFrames * 2);
+    }
+}
+
+// =============================================================================
+// ECS convenience API (so JS/TS devs can create entities without writing C++)
+// =============================================================================
+
+EMSCRIPTEN_KEEPALIVE
+uint32_t td_create_entity(const char* name)
+{
+    if (!td::g_world) return td::INVALID_ENTITY;
+    return td::g_world->createEntity(name ? name : "Entity");
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_entity_set_position(uint32_t id, float x, float y)
+{
+    if (!td::g_world) return;
+    td::PositionComponent* p =
+        td::g_world->getComponent<td::PositionComponent>(id);
+    if (p) { p->x = x; p->y = y; }
+    else {
+        p = td::g_world->addComponent<td::PositionComponent>(id);
+        if (p) { p->x = x; p->y = y; }
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_entity_get_position(uint32_t id, float* outX, float* outY)
+{
+    if (!td::g_world || !outX || !outY) return;
+    td::PositionComponent* p =
+        td::g_world->getComponent<td::PositionComponent>(id);
+    if (p) { *outX = p->x; *outY = p->y; }
+    else   { *outX = 0;    *outY = 0;    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_entity_set_velocity(uint32_t id, float vx, float vy)
+{
+    if (!td::g_world) return;
+    td::VelocityComponent* v =
+        td::g_world->getComponent<td::VelocityComponent>(id);
+    if (v) { v->vx = vx; v->vy = vy; }
+    else {
+        v = td::g_world->addComponent<td::VelocityComponent>(id);
+        if (v) { v->vx = vx; v->vy = vy; }
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_entity_set_sprite(uint32_t id, float w, float h,
+                           float r, float g, float b, float a)
+{
+    if (!td::g_world) return;
+    td::SpriteComponent* s =
+        td::g_world->addComponent<td::SpriteComponent>(id);
+    if (s) {
+        s->width = w; s->height = h;
+        s->r = r; s->g = g; s->b = b; s->a = a;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_entity_set_collider(uint32_t id, float w, float h)
+{
+    if (!td::g_world) return;
+    td::ColliderComponent* c =
+        td::g_world->addComponent<td::ColliderComponent>(id);
+    if (c) { c->width = w; c->height = h; }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_entity_destroy(uint32_t id)
+{
+    if (td::g_world) td::g_world->destroyEntity(id);
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool td_entity_is_valid(uint32_t id)
+{
+    return td::g_world && td::g_world->entityExists(id);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_get_entity_count()
+{
+    return td::g_world ? td::g_world->getEntityCount() : 0;
+}
+
+// -----------------------------------------------------------------------------
+// Input query (lets JS read the engine's input mirror - used by engine-wrapper
+// for `input.isKeyDown(Key::Space)` style checks).
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+bool td_is_key_down(int vkCode)
+{
+    if (vkCode < 0 || vkCode >= 256) return false;
+    return td::g_input.keys[vkCode];
+}
+
+EMSCRIPTEN_KEEPALIVE
+bool td_is_mouse_down(int button)
+{
+    if (button < 0 || button >= 8) return false;
+    return td::g_input.mouseButtons[button];
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_get_mouse_pos(float* outX, float* outY)
+{
+    if (outX) *outX = td::g_input.mouseX;
+    if (outY) *outY = td::g_input.mouseY;
+}
+
+// -----------------------------------------------------------------------------
+// Render a single frame manually (used by the JS bridge if it wants to drive
+// the loop itself instead of emscripten_set_main_loop).
+// -----------------------------------------------------------------------------
+EMSCRIPTEN_KEEPALIVE
+void td_render_frame()
+{
     mainLoop();
-}
-
-EMSCRIPTEN_KEEPALIVE
-void td_set_key(int key, int pressed) {
-    if (key >= 0 && key < 256) {
-        g_keys[key] = (pressed != 0);
-    }
-}
-
-EMSCRIPTEN_KEEPALIVE
-void td_set_mouse(float x, float y, int button, int pressed) {
-    g_mouseX = x;
-    g_mouseY = y;
-    if (button >= 0 && button < 8) {
-        g_mouseButtons[button] = (pressed != 0);
-    }
-}
-
-EMSCRIPTEN_KEEPALIVE
-void td_resize(int width, int height) {
-    g_width = width;
-    g_height = height;
-    emscripten_set_canvas_element_size("#game-canvas", width, height);
-}
-
-EMSCRIPTEN_KEEPALIVE
-void td_load_scene(const char* sceneData) {
-    // Parse scene data and create entities
-    // Format: text-based scene description
-    if (sceneData) {
-        td_js_log("Scene loaded");
-    }
-}
-
-EMSCRIPTEN_KEEPALIVE
-void td_shutdown() {
-    g_world.clear();
-    g_initialized = false;
-    td_js_log("TD Engine shutdown");
 }
 
 } // extern "C"
 
-int main() {
-    emscripten_set_main_loop(mainLoop, 0, 1);
-    return 0;
+// =============================================================================
+// Main loop - called every animation frame by Emscripten.
+//
+// Replicates td::GameLoop's fixed-step accumulator algorithm so the engine's
+// update logic runs at a deterministic 60 Hz regardless of the display's
+// refresh rate (120Hz, 144Hz, etc.). Render runs every rAF tick with the
+// accumulator's remainder as the interpolation alpha.
+// =============================================================================
+static void mainLoop()
+{
+    using namespace td;
+
+    if (!g_running || !g_initialized) return;
+
+    // --- Advance wall clock -------------------------------------------------
+    double now = emscripten_get_now();
+    float  dt  = (float)((now - g_lastTime) / 1000.0);
+    g_lastTime = now;
+    if (dt > 0.25f) dt = 0.25f;   // clamp after tab-switch stalls
+
+    g_time.totalTime += dt;
+    g_time.deltaTime  = dt;
+    g_time.frameCount++;
+
+    // --- Fixed-step updates -------------------------------------------------
+    g_accumulator += dt;
+    while (g_accumulator >= g_fixedStep) {
+        // Snapshot previous-frame input state (so the engine's
+        // keyPressed/keyReleased helpers work).
+        memcpy(g_input.keysPrev,         g_input.keys,
+               sizeof(g_input.keys));
+        memcpy(g_input.mouseButtonsPrev, g_input.mouseButtons,
+               sizeof(g_input.mouseButtons));
+
+        if (g_cb_update) g_cb_update(g_fixedStep);
+
+        // Tick the engine's systems (physics, scripts, etc.)
+        if (g_world) g_world->updateSystems(g_fixedStep);
+
+        g_accumulator -= g_fixedStep;
+    }
+
+    // --- Variable-rate render -----------------------------------------------
+    float alpha = (float)(g_accumulator / g_fixedStep);
+    if (g_cb_render) {
+        g_cb_render(alpha);
+    } else if (g_renderer && g_sprites && g_camera && g_world) {
+        // Default render: clear + draw all sprites via SpriteBatch.
+        g_renderer->clear(0.05f, 0.05f, 0.08f, 1.0f);
+        Mat4 proj = g_camera->getProjection();
+        Mat4 view = g_camera->getView();
+        g_sprites->begin(proj, view);
+
+        // Query all entities that have Position + Sprite.
+        EntityId ents[1024];
+        ComponentMask mask = componentBit(ComponentType::Position) |
+                             componentBit(ComponentType::Sprite);
+        int n = g_world->queryActive(mask, ents, 1024);
+        for (int i = 0; i < n; i++) {
+            PositionComponent* p = g_world->getComponent<PositionComponent>(ents[i]);
+            SpriteComponent*    s = g_world->getComponent<SpriteComponent>(ents[i]);
+            if (!p || !s || !s->visible) continue;
+            SpriteData d;
+            d.x = p->x - s->width  * s->originX;
+            d.y = p->y - s->height * s->originY;
+            d.width  = s->width;
+            d.height = s->height;
+            d.r = s->r; d.g = s->g; d.b = s->b; d.a = s->a;
+            d.rotation = s->rotation;
+            d.originX  = s->originX;
+            d.originY  = s->originY;
+            g_sprites->draw(d, s->texture);
+        }
+        g_sprites->end();
+    } else {
+        // Bare-minimum fallback: just clear the screen so the canvas isn't
+        // stuck on the previous frame.
+        if (g_renderer) g_renderer->clear(0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    // WebGL doesn't require an explicit swap - the browser composites the
+    // default framebuffer at the end of each rAF tick.
 }
 
-#endif // __EMSCRIPTEN__
+// =============================================================================
+// WASM module entry point.
+//
+// On the web, main() runs once when the WASM module is instantiated. We do
+// NOT create a window or GL context here - the JS bridge does that before
+// calling td_init(). main()'s only job is to log readiness.
+// =============================================================================
+int main()
+{
+    TD_LOG_INFO("TD Engine WASM module loaded. Awaiting td_init()...");
+    return 0;
+}

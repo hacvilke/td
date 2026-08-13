@@ -2,10 +2,14 @@
 #include "gl_renderer.h"
 #include "../core/logger.h"
 
+#ifdef __EMSCRIPTEN__
+#include <GLES3/gl3.h>
+#else
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#endif
 
 namespace td {
 
@@ -157,20 +161,24 @@ bool Framebuffer::resize(int width, int height) {
 void Framebuffer::readPixels(int x, int y, int width, int height,
                               unsigned char* outPixels) const {
     gl.glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    
-    // Use glReadPixels - need to add this to GLFunctions
-    typedef void (*PFNGLREADPIXELSPROC)(GLint, GLint, GLsizei, GLsizei, 
+
+#ifdef __EMSCRIPTEN__
+    // Emscripten: glReadPixels is a real symbol from <GLES3/gl3.h>.
+    ::glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, outPixels);
+#else
+    // Win32 desktop: glReadPixels lives in opengl32.dll; load it lazily.
+    typedef void (*PFNGLREADPIXELSPROC)(GLint, GLint, GLsizei, GLsizei,
                                          GLenum, GLenum, void*);
     static PFNGLREADPIXELSPROC glReadPixels = nullptr;
     if (!glReadPixels) {
         glReadPixels = (PFNGLREADPIXELSPROC)GetProcAddress(
             GetModuleHandle("opengl32.dll"), "glReadPixels");
     }
-    
     if (glReadPixels) {
         glReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE, outPixels);
     }
-    
+#endif
+
     gl.glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 

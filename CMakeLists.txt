@@ -1,85 +1,239 @@
+# =============================================================================
+# TD Engine - CMakeLists.txt
+#
+# Two build modes:
+#
+#   1. Desktop build (default)
+#        cmake -B build-desktop && cmake --build build-desktop
+#      Uses the system C++ compiler + Win32 platform layer.
+#
+#   2. WebAssembly build (requires Emscripten)
+#        emcmake cmake -B build-web -DTD_BUILD_WEB=ON
+#        cmake --build build-web
+#      Output: web/td-engine.js + web/td-engine.wasm
+#
+# Common options:
+#   -DTD_BUILD_EDITOR=ON   Build the desktop editor (default ON)
+#   -DTD_BUILD_EXAMPLES=ON Build pong + platformer (default ON)
+#   -DTD_BUILD_TESTS=ON    Build unit tests (default ON)
+# =============================================================================
+
 cmake_minimum_required(VERSION 3.15)
 project(TDEngine VERSION 1.0.0 LANGUAGES CXX)
 
+# --- Build options -----------------------------------------------------------
+option(TD_BUILD_WEB      "Build for WebAssembly (requires Emscripten)" OFF)
+option(TD_BUILD_EDITOR   "Build the desktop editor"                     ON)
+option(TD_BUILD_EXAMPLES "Build pong + platformer examples"             ON)
+option(TD_BUILD_TESTS    "Build unit tests"                              ON)
+
+# --- C++ standard ------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Output directories
+if(NOT CMAKE_BUILD_TYPE AND NOT TD_BUILD_WEB)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# --- Output directories ------------------------------------------------------
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Engine source files
-file(GLOB_RECURSE ENGINE_SOURCES
-    "src/core/*.cpp"
-    "src/platform/*.cpp"
-    "src/renderer/*.cpp"
-    "src/physics/*.cpp"
-    "src/audio/*.cpp"
-    "src/net/*.cpp"
-    "src/assets/*.cpp"
-    "src/ecs/*.cpp"
+# =============================================================================
+# Engine sources (shared between desktop and web)
+# =============================================================================
+# These are the engine's portable subsystem sources. Both builds compile them
+# unchanged - the platform layer is the only thing that differs.
+set(ENGINE_PORTABLE_SOURCES
+    src/core/logger.cpp
+    src/core/game_loop.cpp
+    src/renderer/gl_renderer.cpp
+    src/renderer/sprite_batch.cpp
+    src/renderer/camera.cpp
+    src/renderer/framebuffer.cpp
+    src/renderer/gl_shader.cpp
+    src/renderer/texture.cpp
+    src/renderer/mesh.cpp
+    src/physics/aabb.cpp
+    src/physics/collision.cpp
+    src/physics/rigidbody.cpp
+    src/audio/wav_loader.cpp
+    src/audio/mixer.cpp
+    src/assets/png_decoder.cpp
+    src/assets/obj_loader.cpp
+    src/assets/asset_loader.cpp
+    src/ecs/world.cpp
+    src/ecs/entity.cpp
+    src/td/lexer.cpp
+    src/td/parser.cpp
+    src/td/compiler.cpp
+    src/td/vm.cpp
 )
 
-# TD Scripting language sources
-file(GLOB TD_SOURCES "src/td/*.cpp")
+# =============================================================================
+if(TD_BUILD_WEB)
+# =============================================================================
+# WebAssembly (Emscripten) build
+# =============================================================================
+    # Verify Emscripten toolchain is in use.
+    if(NOT CMAKE_C_COMPILER MATCHES "emcc")
+        message(WARNING
+            "TD_BUILD_WEB=ON but C compiler is not emcc. Use:\n"
+            "  emcmake cmake -B build-web -DTD_BUILD_WEB=ON\n"
+            "Setting compiler to emcc/em++ explicitly.")
+        set(CMAKE_C_COMPILER emcc)
+        set(CMAKE_CXX_COMPILER em++)
+    endif()
 
-# Engine static library
-add_library(td-engine STATIC ${ENGINE_SOURCES} ${TD_SOURCES})
-target_include_directories(td-engine PUBLIC ${CMAKE_SOURCE_DIR}/src)
+    # The platform layer is replaced by the Emscripten main. We do NOT compile
+    # win32_window.cpp / win32_input.cpp / audio_engine.cpp (waveOut) /
+    # socket.cpp (Winsock) - the browser provides those via the JS bridge.
+    set(PLATFORM_SOURCES wasm/emscripten_main.cpp)
 
-# Platform-specific settings
-if(WIN32)
-    target_link_libraries(td-engine PUBLIC
-        opengl32
-        gdi32
-        user32
-        winmm
-        ws2_32
+    add_executable(td-engine ${ENGINE_PORTABLE_SOURCES} ${PLATFORM_SOURCES})
+
+    target_include_directories(td-engine PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+    # Emit a .js glue file (Emscripten convention) into web/.
+    set_target_properties(td-engine PROPERTIES
+        OUTPUT_NAME "td-engine"
+        SUFFIX ".js"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/web"
     )
-    target_compile_definitions(td-engine PUBLIC WIN32 _WINDOWS)
-endif()
 
-# Compiler warnings
-if(MSVC)
-    target_compile_options(td-engine PRIVATE /W4)
+    # Emscripten compile + link flags. Must match the Makefile's EMCCFLAGS.
+    target_compile_options(td-engine PRIVATE
+        -s WASM=1
+        -s USE_WEBGL2=1
+        -s ALLOW_MEMORY_GROWTH=1
+        -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1
+    )
+
+    target_link_options(td-engine PRIVATE
+        -s WASM=1
+        -s USE_WEBGL2=1
+        -s ALLOW_MEMORY_GROWTH=1
+        -s NO_EXIT_RUNTIME=1
+        -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1
+        -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","malloc","free","HEAPF32","HEAP16","HEAPU8"]'
+        -s EXPORTED_FUNCTIONS='["_main","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks"]'
+        -s ASYNCIFY=0
+        -s EXIT_RUNTIME=0
+    )
+
+    # No desktop editor / examples / tests in the web build.
+    set(TD_BUILD_EDITOR   OFF CACHE BOOL "" FORCE)
+    set(TD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(TD_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+
+    message(STATUS "=============================")
+    message(STATUS " TD Engine: WebAssembly build")
+    message(STATUS "=============================")
+    message(STATUS " Output: web/td-engine.js + web/td-engine.wasm")
+    message(STATUS " Platform layer: wasm/emscripten_main.cpp")
+    message(STATUS " Excluded (desktop-only): win32_window, win32_input, audio_engine, socket")
+    message(STATUS "")
+
+# =============================================================================
 else()
-    target_compile_options(td-engine PRIVATE -Wall -Wextra)
+# =============================================================================
+# Desktop build (Win32 / Linux / macOS)
+# =============================================================================
+    set(PLATFORM_SOURCES
+        src/platform/win32_window.cpp
+        src/platform/win32_input.cpp
+        src/audio/audio_engine.cpp
+        src/net/socket.cpp
+    )
+
+    # Static library form of the engine - shared between editor, examples,
+    # and tests so we don't recompile the engine N times.
+    add_library(td-engine STATIC ${ENGINE_PORTABLE_SOURCES} ${PLATFORM_SOURCES})
+    target_include_directories(td-engine PUBLIC ${CMAKE_SOURCE_DIR}/src)
+
+    if(WIN32)
+        target_link_libraries(td-engine PUBLIC
+            opengl32 gdi32 user32 winmm ws2_32
+        )
+        target_compile_definitions(td-engine PUBLIC WIN32 _WINDOWS)
+    else()
+        find_package(Threads REQUIRED)
+        find_package(OpenGL REQUIRED)
+        target_link_libraries(td-engine PUBLIC
+            ${CMAKE_THREAD_LIBS_INIT} OpenGL::GL
+        )
+    endif()
+
+    if(MSVC)
+        target_compile_options(td-engine PRIVATE /W4)
+    else()
+        target_compile_options(td-engine PRIVATE -Wall -Wextra)
+    endif()
+
+    # --- Examples -----------------------------------------------------------
+    if(TD_BUILD_EXAMPLES)
+        add_executable(pong examples/pong/main.cpp)
+        target_link_libraries(pong PRIVATE td-engine)
+
+        add_executable(platformer examples/platformer/main.cpp)
+        target_link_libraries(platformer PRIVATE td-engine)
+
+        # Copy assets next to the executable so the examples can find them.
+        add_custom_command(TARGET pong POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pong>/assets
+        )
+        add_custom_command(TARGET platformer POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:platformer>/assets
+        )
+    endif()
+
+    # --- Tests --------------------------------------------------------------
+    if(TD_BUILD_TESTS)
+        enable_testing()
+        add_executable(test_math  tests/test_math.cpp)
+        target_link_libraries(test_math  PRIVATE td-engine)
+        add_executable(test_ecs    tests/test_ecs.cpp)
+        target_link_libraries(test_ecs    PRIVATE td-engine)
+        add_executable(test_physics tests/test_physics.cpp)
+        target_link_libraries(test_physics PRIVATE td-engine)
+        add_test(NAME math COMMAND test_math)
+        add_test(NAME ecs   COMMAND test_ecs)
+        add_test(NAME physics COMMAND test_physics)
+    endif()
+
+    # --- Editor -------------------------------------------------------------
+    if(TD_BUILD_EDITOR AND EXISTS "${CMAKE_SOURCE_DIR}/editor/main.cpp")
+        file(GLOB EDITOR_SOURCES "editor/*.cpp")
+        add_executable(td-editor ${EDITOR_SOURCES})
+        target_link_libraries(td-editor PRIVATE td-engine)
+        set_target_properties(td-editor PROPERTIES
+            OUTPUT_NAME "td-editor"
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+        )
+    endif()
+
+    message(STATUS "============================")
+    message(STATUS " TD Engine: Desktop build")
+    message(STATUS "============================")
+    message(STATUS " Platform layer: ${PLATFORM_SOURCES}")
+    message(STATUS " Editor:   $<IF:$<BOOL:${TD_BUILD_EDITOR}>,yes,no>")
+    message(STATUS " Examples: $<IF:$<BOOL:${TD_BUILD_EXAMPLES}>,yes,no>")
+    message(STATUS " Tests:    $<IF:$<BOOL:${TD_BUILD_TESTS}>,yes,no>")
+    message(STATUS "")
+
 endif()
 
-# Examples
-add_executable(pong examples/pong/main.cpp)
-target_link_libraries(pong PRIVATE td-engine)
-
-add_executable(platformer examples/platformer/main.cpp)
-target_link_libraries(platformer PRIVATE td-engine)
-
-# Tests
-add_executable(test_math tests/test_math.cpp)
-target_link_libraries(test_math PRIVATE td-engine)
-
-add_executable(test_ecs tests/test_ecs.cpp)
-target_link_libraries(test_ecs PRIVATE td-engine)
-
-add_executable(test_physics tests/test_physics.cpp)
-target_link_libraries(test_physics PRIVATE td-engine)
-
-# Copy assets
-add_custom_command(TARGET pong POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:pong>/assets
-)
-
-# Install targets
-install(TARGETS td-engine ARCHIVE DESTINATION lib)
-install(DIRECTORY src/ DESTINATION include/td-engine
-    FILES_MATCHING PATTERN "*.h"
-)
-install(DIRECTORY assets/ DESTINATION share/td-engine/assets)
-
-# Editor (if sources exist)
-if(EXISTS "${CMAKE_SOURCE_DIR}/editor/main.cpp")
-    file(GLOB EDITOR_SOURCES "editor/*.cpp")
-    add_executable(td-editor ${EDITOR_SOURCES})
-    target_link_libraries(td-editor PRIVATE td-engine)
+# =============================================================================
+# Install rules (desktop only)
+# =============================================================================
+if(NOT TD_BUILD_WEB)
+    install(TARGETS td-engine ARCHIVE DESTINATION lib)
+    install(DIRECTORY src/ DESTINATION include/td-engine
+        FILES_MATCHING PATTERN "*.h"
+    )
+    install(DIRECTORY assets/ DESTINATION share/td-engine/assets)
 endif()
