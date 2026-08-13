@@ -105,36 +105,36 @@ EMCCFLAGS ?= -O2 -std=c++17 -Wall \
 .PHONY: all web examples editor clean clean-web help
 
 all: dirs $(ENGINE_LIB) $(PONG_EXE) $(PLAT_EXE)
-        @echo "Desktop build complete: $(BIN_DIR)/"
+	@echo "Desktop build complete: $(BIN_DIR)/"
 
 # Create output directories (Windows mkdir syntax - works in MinGW cmd shell).
 dirs:
-        @if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)
-        @if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
-        @if not exist $(LIB_DIR) mkdir $(LIB_DIR)
-        @if not exist $(BIN_DIR) mkdir $(BIN_DIR)
+	@if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)
+	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+	@if not exist $(LIB_DIR) mkdir $(LIB_DIR)
+	@if not exist $(BIN_DIR) mkdir $(BIN_DIR)
 
 # --- Object file compilation -------------------------------------------------
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-        @if not exist $(dir $@) mkdir $(dir $@)
-        $(CXX) $(CXXFLAGS) -c $< -o $@
+	@if not exist $(dir $@) mkdir $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # --- Engine static library ---------------------------------------------------
 $(ENGINE_LIB): $(ENGINE_OBJ)
-        $(AR) rcs $@ $^
+	$(AR) rcs $@ $^
 
 # --- Pong example ------------------------------------------------------------
 $(PONG_EXE): examples/pong/main.cpp $(ENGINE_LIB)
-        $(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
 
 # --- Platformer example ------------------------------------------------------
 $(PLAT_EXE): examples/platformer/main.cpp $(ENGINE_LIB)
-        $(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
 
 # --- Editor (desktop) --------------------------------------------------------
 editor: dirs $(ENGINE_LIB)
-        @if exist editor\main.cpp \
-            $(CXX) $(CXXFLAGS) $(wildcard editor/*.cpp) $(ENGINE_LIB) $(WIN_LIBS) -o $(EDITOR_EXE)
+	@if exist editor\main.cpp \
+	    $(CXX) $(CXXFLAGS) $(wildcard editor/*.cpp) $(ENGINE_LIB) $(WIN_LIBS) -o $(EDITOR_EXE)
 
 examples: $(PONG_EXE) $(PLAT_EXE)
 
@@ -146,48 +146,48 @@ examples: $(PONG_EXE) $(PLAT_EXE)
 web: $(WEB_DIR)/td-engine.js
 
 $(WEB_DIR)/td-engine.js: $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC)
-        @mkdir -p $(WEB_DIR)
-        $(EMXX) $(EMCCFLAGS) $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC) -o $(WEB_DIR)/td-engine.js
-        @echo ""
-        @echo "WebAssembly build complete:"
-        @echo "  $(WEB_DIR)/td-engine.js   (emcc glue)"
-        @echo "  $(WEB_DIR)/td-engine.wasm (binary)"
-        @echo ""
-        @echo "To run locally:"
-        @echo "  cd web && python3 -m http.server 8000"
-        @echo "  # then open http://localhost:8000 in a browser"
+	@mkdir -p $(WEB_DIR)
+	$(EMXX) $(EMCCFLAGS) $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC) -o $(WEB_DIR)/td-engine.js
+	@echo ""
+	@echo "WebAssembly build complete:"
+	@echo "  $(WEB_DIR)/td-engine.js   (emcc glue)"
+	@echo "  $(WEB_DIR)/td-engine.wasm (binary)"
+	@echo ""
+	@echo "To run locally:"
+	@echo "  cd web && python3 -m http.server 8000"
+	@echo "  # then open http://localhost:8000 in a browser"
 
 # =============================================================================
 # Clean
 # =============================================================================
 clean:
-        @if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
+	@if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
 
 clean-web:
-        @del /q $(WEB_DIR)\td-engine.js $(WEB_DIR)\td-engine.wasm 2>nul
-        @del /q $(WEB_DIR)\td-engine.data 2>nul
+	@del /q $(WEB_DIR)\td-engine.js $(WEB_DIR)\td-engine.wasm 2>nul
+	@del /q $(WEB_DIR)\td-engine.data 2>nul
 
 # =============================================================================
 # Help
 # =============================================================================
 help:
-        @echo "TD Engine Makefile targets:"
-        @echo ""
-        @echo "Desktop (MinGW / MSVC):"
-        @echo "  make           - build engine lib + pong + platformer (default)"
-        @echo "  make editor    - build the desktop editor (if editor/*.cpp exist)"
-        @echo "  make examples  - build pong + platformer"
-        @echo "  make clean     - remove all desktop build artifacts"
-        @echo ""
-        @echo "WebAssembly (requires Emscripten on PATH):"
-        @echo "  make web       - build web/td-engine.js + web/td-engine.wasm"
-        @echo "  make clean-web - remove only the WASM bundle"
-        @echo ""
-        @echo "To run the web build:"
-        @echo "  make web"
-        @echo "  cd web"
-        @echo "  python3 -m http.server 8000"
-        @echo "  # open http://localhost:8000 in a browser"
+	@echo "TD Engine Makefile targets:"
+	@echo ""
+	@echo "Desktop (MinGW / MSVC):"
+	@echo "  make           - build engine lib + pong + platformer (default)"
+	@echo "  make editor    - build the desktop editor (if editor/*.cpp exist)"
+	@echo "  make examples  - build pong + platformer"
+	@echo "  make clean     - remove all desktop build artifacts"
+	@echo ""
+	@echo "WebAssembly (requires Emscripten on PATH):"
+	@echo "  make web       - build web/td-engine.js + web/td-engine.wasm"
+	@echo "  make clean-web - remove only the WASM bundle"
+	@echo ""
+	@echo "To run the web build:"
+	@echo "  make web"
+	@echo "  cd web"
+	@echo "  python3 -m http.server 8000"
+	@echo "  # open http://localhost:8000 in a browser"
 
 # =============================================================================
 # Phony / pattern rule
