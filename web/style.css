@@ -443,3 +443,25 @@ html, body {
         padding: 3px 8px;
     }
 }
+
+/* =============================================================================
+   VOID RUNNER — tip block under the controls grid
+   ============================================================================= */
+.controls-tip {
+    margin-top: 18px;
+    padding: 12px 16px;
+    border: 1px solid rgba(0, 212, 255, 0.18);
+    border-radius: 6px;
+    background: rgba(0, 212, 255, 0.04);
+    font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #b8c4d4;
+    text-align: center;
+}
+.controls-tip p {
+    margin: 0;
+}
+.controls-tip p + p {
+    margin-top: 4px;
+}

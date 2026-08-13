@@ -31,7 +31,7 @@ python3 -m http.server 8000
 # open http://localhost:8000 in a browser
 ```
 
-The web player (`web/index.html`) loads `td-engine.wasm` and runs a complete Pong game written in pure JavaScript (`web/examples/pong.js`) that drives the C++ engine via `TDBridge`.
+The web player (`web/index.html`) loads `td-engine.wasm` and runs **VOID RUNNER**, a complete vertical space shooter written in pure JavaScript (`web/examples/voidrunner.js`) that drives the C++ engine via `TDBridge`.
 
 ## Writing a web game in JavaScript
 
@@ -78,7 +78,7 @@ engine.onUpdate((dt, input) => {
 });
 ```
 
-See [`web/examples/pong.js`](web/examples/pong.js) for a complete, working game.
+See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, working game.
 
 ## Features
 
@@ -138,7 +138,7 @@ td-engine/
     ├── style.css            # Dark theme + #00D4FF accent
     ├── engine-wrapper.ts    # TypeScript public API for web game devs
     └── examples/
-        └── pong.js          # Complete Pong game in pure JS
+        └── voidrunner.js    # VOID RUNNER — vertical space shooter (pure JS)
 ```
 
 ## Building
@@ -228,7 +228,7 @@ int main() {
 
 ## Quick Start (Browser JavaScript)
 
-See [`web/examples/pong.js`](web/examples/pong.js) for a complete, working game. The workflow is:
+See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, working game. The workflow is:
 
 1. Include `td-engine.js` (Emscripten glue) + `wasm/js_bridge.js` (TDBridge) in your HTML.
 2. Call `await TDBridge.init('game-canvas')` to boot the engine.

@@ -73,7 +73,7 @@ python3 -m http.server 8000
 │  │ index.html   ├───┤  TDBridge.init(canvas)       │   │
 │  │ style.css    │   │  - canvas.getContext('webgl2')│   │
 │  │ examples/    │   │  - load td-engine.js glue    │   │
-│  │   pong.js    │   │  - forward key/mouse events  │   │
+│  │   voidrunner │   │  - forward key/mouse events  │   │
 │  │ engine-      │   │  - Web Audio ScriptProcessor │   │
 │  │ wrapper.ts   │   │  - exposes window.TDBridge   │   │
 │  └──────────────┘   └──────────────┬───────────────┘   │
@@ -154,7 +154,7 @@ const td_set_pos = Module.cwrap('td_entity_set_position', null,
 
 ## Writing a game in JavaScript
 
-See [`web/examples/pong.js`](../web/examples/pong.js) for a complete Pong game written in pure JS that runs on the C++ engine via WASM. The workflow:
+See [`web/examples/voidrunner.js`](../web/examples/voidrunner.js) for a complete space shooter game written in pure JS that runs on the C++ engine via WASM. The workflow:
 
 1. Wait for `TDBridge.onReady()`.
 2. Use `Module.cwrap('td_create_entity', ...)` to create entities.
