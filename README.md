@@ -31,7 +31,17 @@ python3 -m http.server 8000
 # open http://localhost:8000 in a browser
 ```
 
+Or just play it online: **https://hacvilke.github.io/td/**
+
 The web player (`web/index.html`) loads `td-engine.wasm` and runs **VOID RUNNER**, a complete vertical space shooter written in pure JavaScript (`web/examples/voidrunner.js`) that drives the C++ engine via `TDBridge`.
+
+## Download prebuilt Windows binaries
+
+Don't want to build from source? Grab the latest Windows x64 build from the
+[Releases page](https://github.com/hacvilke/td/releases):
+
+- **[TD Engine (Latest Build)](https://github.com/hacvilke/td/releases/tag/latest)** — rolling pre-release, rebuilt on every push to `main`. Contains `pong.exe`, `platformer.exe`, `td-editor.exe`, the test suite, sources, and assets in a single zip.
+- **[Tagged releases](https://github.com/hacvilke/td/releases)** — stable versions, cut by pushing a `v*.*.*` tag (e.g. `v1.0.0`).
 
 ## Writing a web game in JavaScript
 

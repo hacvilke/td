@@ -4,8 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser.">
+    <meta name="theme-color" content="#0a0e14">
+    <!-- Cache-bust: tell browser not to cache the page itself, so users always
+         get the latest version (previous Pong:Rush builds were sticking in cache). -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 
@@ -111,13 +117,13 @@
     <!-- ====================================================================== -->
 
     <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
-    <script src="td-engine.js"></script>
+    <script src="td-engine.js?v=2"></script>
 
     <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
-    <script src="js_bridge.js"></script>
+    <script src="js_bridge.js?v=2"></script>
 
     <!-- Sample game - VOID RUNNER, a space shooter that runs on the engine via WASM. -->
-    <script src="examples/voidrunner.js"></script>
+    <script src="examples/voidrunner.js?v=2"></script>
 
     <script>
         (async function () {
