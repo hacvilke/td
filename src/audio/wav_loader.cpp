@@ -125,7 +125,7 @@ bool WAVLoader::load(const char* path, WAVData& out) {
                 snprintf(m_errorMsg, sizeof(m_errorMsg), 
                          "Failed to read audio data (got %zu, expected %u)", 
                          bytesRead, chunkSize);
-                free(out.data);
+                ::free(out.data);
                 out.data = nullptr;
                 fclose(file);
                 return false;
@@ -146,7 +146,7 @@ bool WAVLoader::load(const char* path, WAVData& out) {
     if (!foundFmt || !foundData) {
         snprintf(m_errorMsg, sizeof(m_errorMsg), "Missing required chunks");
         if (out.data) {
-            free(out.data);
+            ::free(out.data);
             out.data = nullptr;
         }
         return false;

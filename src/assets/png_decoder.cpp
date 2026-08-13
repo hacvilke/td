@@ -224,7 +224,7 @@ bool PNGDecoder::inflate(const uint8_t* compressed, uint32_t compressedSize,
                 code = ((code & 0x0F) << 4) | ((code & 0xF0) >> 4);
                 code >>= 1;
                 
-                if (code >= 0 && code <= 23) {
+                if (code <= 23) {
                     symbol = 256 + code;
                     bitBuffer >>= 7;
                     bitsInBuffer -= 7;
@@ -313,7 +313,7 @@ bool PNGDecoder::inflate(const uint8_t* compressed, uint32_t compressedSize,
         }
         else {
             snprintf(m_error, sizeof(m_error), "Invalid block type: %d", blockType);
-            free(output);
+            ::free(output);
             return false;
         }
     }
@@ -352,7 +352,7 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
     
     // Verify signature
     if (fileSize < 8 || !verifySignature(fileData)) {
-        free(fileData);
+        ::free(fileData);
         snprintf(m_error, sizeof(m_error), "Invalid PNG signature");
         return false;
     }
@@ -375,8 +375,8 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
         if (chunkType == CHUNK_IHDR) {
             if (chunkLength < 13) {
                 snprintf(m_error, sizeof(m_error), "Invalid IHDR chunk");
-                free(fileData);
-                if (idatData) free(idatData);
+                ::free(fileData);
+                if (idatData) ::free(idatData);
                 return false;
             }
             
@@ -387,8 +387,8 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
             
             if (bitDepth != 8) {
                 snprintf(m_error, sizeof(m_error), "Only 8-bit depth supported");
-                free(fileData);
-                if (idatData) free(idatData);
+                ::free(fileData);
+                if (idatData) ::free(idatData);
                 return false;
             }
         }
@@ -413,11 +413,11 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
         pos += 12 + chunkLength; // Header + data + CRC
     }
     
-    free(fileData);
+    ::free(fileData);
     
     if (!idatData || idatSize == 0) {
         snprintf(m_error, sizeof(m_error), "No image data found");
-        if (idatData) free(idatData);
+        if (idatData) ::free(idatData);
         return false;
     }
     
@@ -426,11 +426,11 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
     uint32_t decompressedSize = 0;
     
     if (!inflate(idatData, idatSize, &decompressed, &decompressedSize)) {
-        free(idatData);
+        ::free(idatData);
         return false;
     }
     
-    free(idatData);
+    ::free(idatData);
     
     // Determine source channels
     int srcChannels;
@@ -442,13 +442,13 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
         case 6: srcChannels = 4; break; // RGBA
         default:
             snprintf(m_error, sizeof(m_error), "Unsupported color type: %d", colorType);
-            free(decompressed);
+            ::free(decompressed);
             return false;
     }
     
     // Unfilter
     if (!unfilter(decompressed, width, height, srcChannels)) {
-        free(decompressed);
+        ::free(decompressed);
         return false;
     }
     
@@ -459,7 +459,7 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
     out.pixels = (uint8_t*)malloc(width * height * 4);
     
     if (!out.pixels) {
-        free(decompressed);
+        ::free(decompressed);
         snprintf(m_error, sizeof(m_error), "Failed to allocate output pixels");
         return false;
     }
@@ -519,7 +519,7 @@ bool PNGDecoder::decode(const char* path, PNGImage& out) {
         }
     }
     
-    free(decompressed);
+    ::free(decompressed);
     return true;
 }
 

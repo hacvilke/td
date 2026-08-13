@@ -20,33 +20,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The "Visual Studio 17 2022" CMake generator relies on vswhere to
-      # locate the VS install, which is fragile on windows-latest. We use
-      # the VS Developer Command Prompt + Ninja instead — both are
-      # preinstalled on the runner image and don't depend on third-party
-      # actions that may disappear.
-      - name: Configure CMake (Ninja + MSVC)
-        shell: cmd
+      # Locate Visual Studio via vswhere (always preinstalled on windows-latest),
+      # then call VsDevCmd.bat from whatever path it returns. Previous versions
+      # hardcoded "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\..."
+      # which silently broke when GitHub rotated the runner image. vswhere is
+      # the documented, supported way to find a VS install and is stable across
+      # image updates (windows-2022 / windows-2025 / BuildTools / etc.).
+      - name: Locate MSVC & configure CMake (Ninja)
+        shell: pwsh
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=x64
-          cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=bin
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere — runner image is misconfigured"
+          }
+          $vsPath = & $vswhere -latest -property installationPath
+          if (-not $vsPath) {
+            throw "vswhere did not report any Visual Studio install"
+          }
+          Write-Host "Visual Studio install: $vsPath"
+          $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+          if (-not (Test-Path $vsDevCmd)) {
+            throw "VsDevCmd.bat not found at $vsDevCmd"
+          }
+          Write-Host "VsDevCmd: $vsDevCmd"
+
+          # Run vcvars + cmake in cmd, because VsDevCmd.bat is a .bat file
+          # and PowerShell cannot source it directly.
+          cmd /c "call `"$vsDevCmd`" -arch=amd64 -host_arch=x64 && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=bin 2>&1"
 
       - name: Build
-        id: build
-        shell: cmd
+        shell: pwsh
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=x64
-          cmake --build build --parallel
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & $vswhere -latest -property installationPath
+          $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+          cmd /c "call `"$vsDevCmd`" -arch=amd64 -host_arch=x64 && cmake --build build --parallel 2>&1"
 
       - name: Run unit tests
         if: success() || failure()
-        shell: cmd
+        shell: pwsh
         continue-on-error: true
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=amd64 -host_arch=x64
-          build\bin\test_math.exe || true
-          build\bin\test_ecs.exe || true
-          build\bin\test_physics.exe || true
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath  = & $vswhere -latest -property installationPath
+          $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+          cmd /c "call `"$vsDevCmd`" -arch=amd64 -host_arch=x64 && (build\bin\test_math.exe || ver>nul) && (build\bin\test_ecs.exe || ver>nul) && (build\bin\test_physics.exe || ver>nul) 2>&1"
 
       # Always stage + upload whatever binaries got built, even if the
       # build step partially failed (e.g. one example didn't compile).
@@ -86,12 +104,13 @@ jobs:
 
           # Docs
           Copy-Item -Path "README.md"      -Destination "$stage/" -ErrorAction SilentlyContinue
+          Copy-Item -Path "LICENSE"        -Destination "$stage/" -ErrorAction SilentlyContinue
           Copy-Item -Path "Makefile"       -Destination "$stage/" -ErrorAction SilentlyContinue
           Copy-Item -Path "CMakeLists.txt" -Destination "$stage/" -ErrorAction SilentlyContinue
 
           # Write a README inside the zip explaining what's inside
           @"
-          TD Engine — Windows x64 Build
+          TD Engine -- Windows x64 Build
           ==============================
 
           Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC') (UTC)
@@ -116,6 +135,7 @@ jobs:
           that compile and run but don't yet have full functionality.
 
           Full source: https://github.com/hacvilke/td
+          Licensed under the MIT License -- see LICENSE.
           "@ | Out-File -FilePath "$stage/USAGE.txt" -Encoding utf8
 
           # Zip
@@ -125,7 +145,7 @@ jobs:
           $size = (Get-Item "td-engine-windows-x64.zip").Length
           Write-Host "Zip size: $size bytes"
           if ($size -lt 1000) {
-            Write-Host "::warning::Zip is suspiciously small ($size bytes) — build may have failed"
+            Write-Host "::warning::Zip is suspiciously small ($size bytes) -- build may have failed"
           }
 
       - name: Upload build artifact

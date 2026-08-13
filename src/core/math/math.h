@@ -24,6 +24,10 @@ inline float lerp(float a, float b, float t) {
     return a + (b - a) * t;
 }
 
+inline float maxF(float a, float b) { return a > b ? a : b; }
+inline float minF(float a, float b) { return a < b ? a : b; }
+inline float absF(float v) { return v < 0 ? -v : v; }
+
 inline float inverseLerp(float a, float b, float value) {
     if (absF(b - a) < TD_EPSILON) return 0.0f;
     return (value - a) / (b - a);
@@ -33,10 +37,6 @@ inline float remap(float value, float fromLo, float fromHi, float toLo, float to
     float t = inverseLerp(fromLo, fromHi, value);
     return lerp(toLo, toHi, t);
 }
-
-inline float maxF(float a, float b) { return a > b ? a : b; }
-inline float minF(float a, float b) { return a < b ? a : b; }
-inline float absF(float v) { return v < 0 ? -v : v; }
 
 inline float signF(float v) {
     if (v > 0) return 1.0f;

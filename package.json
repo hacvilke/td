@@ -1,7 +1,8 @@
 {
-  "name": "react-vite-tailwind",
+  "name": "td-engine",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
