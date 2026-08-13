@@ -10,6 +10,9 @@ const __dirname = path.dirname(__filename);
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Use relative base so the single-file build works both at the root
+  // (e.g. Vite preview) and at a sub-path (e.g. GitHub Pages /td/).
+  base: './',
   plugins: [react(), tailwindcss(), viteSingleFile()],
   resolve: {
     alias: {

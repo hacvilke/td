@@ -14,7 +14,7 @@
         <div id="progress-bar">
             <div id="progress-fill"></div>
         </div>
-        <p id="loading-status">Initializing WebAssembly...</p>
+        <p id="loading-status">Initializing WebGL2...</p>
     </div>
 
     <!-- Game canvas -->
@@ -27,38 +27,43 @@
         <span>Escape — Pause</span>
     </div>
 
-    <script src="../wasm/js_bridge.js"></script>
-    <script>
-        window.addEventListener('load', async () => {
-            const loadingEl = document.getElementById('loading');
-            const statusEl = document.getElementById('loading-status');
+    <!--
+      Fixed: web/index.html previously loaded wasm/js_bridge.js, which never
+      actually loaded a WASM module and left the canvas blank. The bridge is
+      now a real TypeScript engine implementation (web/engine/) loaded via
+      Vite module script.
+    -->
+    <script type="module">
+        const loadingEl = document.getElementById('loading');
+        const statusEl = document.getElementById('loading-status');
+        const progressEl = document.getElementById('progress-fill');
 
-            try {
-                statusEl.textContent = 'Loading WebGL context...';
+        try {
+            const { TDEngine } = await import('./js_bridge.ts');
 
-                TDEngine.onLog((msg) => {
-                    console.log('[Engine]', msg);
-                });
+            TDEngine.onLog((msg) => console.log('[Engine]', msg));
 
-                TDEngine.onReady(() => {
-                    // Hide loading screen
-                    loadingEl.style.opacity = '0';
-                    setTimeout(() => {
-                        loadingEl.style.display = 'none';
-                    }, 500);
+            TDEngine.onReady(() => {
+                loadingEl.style.opacity = '0';
+                setTimeout(() => { loadingEl.style.display = 'none'; }, 500);
+                TDEngine.start();
+            });
 
-                    // Start the game loop
-                    TDEngine.start();
-                });
+            // Visual progress while Vite evaluates the module
+            let p = 0;
+            const iv = setInterval(() => {
+                p = Math.min(p + 15, 90);
+                if (progressEl) progressEl.style.width = p + '%';
+                if (p >= 90) clearInterval(iv);
+            }, 80);
 
-                statusEl.textContent = 'Initializing engine...';
-                await TDEngine.init('game-canvas');
-
-            } catch (error) {
-                statusEl.textContent = 'Error: ' + error.message;
-                console.error('Engine initialization failed:', error);
-            }
-        });
+            statusEl.textContent = 'Initializing engine...';
+            await TDEngine.init('game-canvas');
+            if (progressEl) progressEl.style.width = '100%';
+        } catch (error) {
+            statusEl.textContent = 'Error: ' + error.message;
+            console.error('Engine initialization failed:', error);
+        }
     </script>
 </body>
 </html>

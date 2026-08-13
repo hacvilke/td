@@ -1,6 +1,42 @@
 # TD Engine
 
-A complete 2D/3D game engine written from scratch in C/C++ with zero external dependencies.
+A complete 2D/3D game engine written from scratch in C/C++ with zero external dependencies, plus a TypeScript port that runs in any modern browser.
+
+## Status
+
+| Platform | Status | Path |
+|----------|--------|------|
+| **Native (Windows)** | C++ source — builds with MinGW / Visual Studio | `src/`, `editor/`, `examples/` |
+| **Browser (WebGL2)** | TypeScript port + complete game | `web/engine/`, `web/game/`, `src/` |
+
+## Browser Quick Start
+
+```bash
+npm install
+npm run dev      # Vite dev server
+npm run build    # single-file production build to dist/
+npm run preview  # preview the production build
+```
+
+Then open the printed URL and click **Play Pong:Rush**. The game runs entirely client-side on the engine's TypeScript port — ECS, SpriteBatch, AABB physics, particles, AI.
+
+## Bug fix — WASM bridge
+
+The original `wasm/js_bridge.js` shipped with a `_loadWASM()` method that never actually loaded a WASM module — it just simulated a progress bar and stored the config object as `this._module`. Every `_td_init` / `_td_update` call was therefore a silent no-op and the browser canvas stayed blank.
+
+We replaced the stub with a real TypeScript implementation of the engine's public API under `web/engine/`:
+
+```
+web/engine/
+├── math.ts       # Vec2/Vec3/Vec4/Mat4/Color — 1:1 port of src/core/math/
+├── ecs.ts        # World / Entity / Component / System — port of src/ecs/
+├── renderer.ts   # WebGL2 SpriteBatch — port of src/renderer/sprite_batch.{h,cpp}
+├── camera.ts     # Camera2D — port of src/renderer/camera.{h,cpp}
+├── input.ts      # Input + Key enum — port of src/platform/win32_input.{h,cpp}
+└── engine.ts     # GameLoop + top-level Engine — port of src/core/game_loop.{h,cpp}
+```
+
+The C++ engine in `src/` is preserved for native builds; the TypeScript port mirrors its architecture so the same game logic can target both.
 
 ## Features
 

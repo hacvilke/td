@@ -47,6 +47,9 @@ desktop.ini
 node_modules/
 package-lock.json
 
+# Vite build output
+dist/
+
 # Emscripten cache
 .emscripten_cache/
 
