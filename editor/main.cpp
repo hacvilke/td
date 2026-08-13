@@ -25,7 +25,12 @@
 
 using namespace td;
 
-// Immediate mode GUI context for the editor
+// Immediate mode GUI context for the editor.
+// Defined inside namespace td so it matches the forward declarations in
+// the panel headers (scene_panel.h, inspector_panel.h, etc.). Without this,
+// MSVC sees both ::GuiContext (local) and td::GuiContext (forward-declared)
+// as ambiguous when 'using namespace td' is in effect.
+namespace td {
 struct GuiContext {
     float mouseX, mouseY;
     bool mouseDown, mouseClicked;
@@ -60,6 +65,7 @@ struct GuiContext {
                mouseY >= y && mouseY <= y + h;
     }
 };
+} // namespace td
 
 // Editor state
 static Win32Window* g_window = nullptr;
