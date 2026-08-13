@@ -275,6 +275,320 @@ object tracking, etc. Free with a key (instant registration).
 
 **CORS:** Yes.
 
+### 13. Star Wars API (SWAPI) - `https://swapi.info/api`
+
+**What it is.** The original "hello world" of public APIs. Fully free,
+no key, no rate limit for reasonable use. Returns JSON for people, films,
+starships, vehicles, species, planets - 200+ resources total. Mirrored at
+`swapi.dev` and `swapi.info`; the `.info` mirror is faster and more reliable
+as of 2024.
+
+**Relevance to a game engine.**
+
+- **Franchise tie-in games.** A Star Wars tower-defense or RPG can pull
+  real character data (Luke's height, Vader's mass) and use it to scale
+  sprites - Vader is literally 2.02m tall, so his sprite is 2x the player's.
+- **Procedural starship roster.** `GET /starships` returns 36 ships with
+  model, manufacturer, crew size, hyperdrive rating. Each becomes a
+  `SpriteComponent` + a `StatsComponent` (crew = HP, hyperdrive = speed).
+- **Planet tilesets.** `GET /planets` returns terrain/climate strings
+  ("desert", "tundra") - use them to pick which TD Engine tile texture
+  to load for that level.
+
+**Integration sketch (starship roster):**
+
+```javascript
+const td_create = Module.cwrap('td_create_entity', 'number', ['string']);
+const td_set_spr = Module.cwrap('td_entity_set_sprite', null,
+    ['number','number','number','number','number','number','number']);
+const td_set_pos = Module.cwrap('td_entity_set_position', null,
+    ['number','number','number']);
+
+const res = await fetch('https://swapi.info/api/starships');
+const { results } = await res.json();
+results.forEach((ship, i) => {
+    const ent = td_create(ship.name);
+    td_set_pos(ent, 64 + (i % 8) * 96, 64 + Math.floor(i / 8) * 96);
+    // Hyperdrive rating 1-5 → sprite scale 0.5-1.5.
+    const scale = 1.6 - Math.min(parseFloat(ship.hyperdrive_rating) || 4, 5);
+    td_set_spr(ent, 64, 64, scale, scale, 1, 1, 1);
+});
+```
+
+**CORS:** Yes.
+
+### 14. An API of Ice And Fire - `https://anapioficeandfire.com/api`
+
+**What it is.** Free, key-free JSON API for the Game of Thrones universe:
+books, characters, houses. 2000+ characters with allegiances, titles,
+spouse, died-in-book markers. Built and hosted by Joey Hoer.
+
+**Relevance to a game engine.**
+
+- **House-based strategy game.** `GET /houses` returns each house's name,
+  words ("Winter is Coming"), seat, region, coat-of-arms URL. Each house
+  becomes a faction in a TD Engine RTS - the words become the faction's
+  tooltip, the region picks the map biome.
+- **Character-driven RPG.** Pull a character's POV-book count and use it as
+  their level. Characters marked `died` are removed from the roster.
+- **Allegiance graph.** Each character has a `allegiances` array of house
+  URLs - build a politics/faction map for a Game-of-Thrones-style visual
+  novel.
+
+**CORS:** Yes.
+
+### 15. Harry Potter API - `https://hp-api.onrender.com`
+
+**What it is.** Free, key-free JSON API listing Harry Potter characters
+(with house, wand, patronus), spells, and houses. Hosted on Render's
+free tier so it can be slow on first hit (cold start ~10s).
+
+**Relevance to a game engine.**
+
+- **Wand dueling game.** `GET /spells` returns 150+ spells with name +
+  type (charm, jinx, curse). Player draws a gesture → engine matches it
+  to a spell → JS fetches the spell's name + type from the API to display
+  as the projectile's label.
+- **House-sorted lobby.** Fetch characters by house (`/house/gryffindor`)
+  and use them as preset bot opponents in a multiplayer lobby - each bot's
+  sprite is tinted with the house color.
+- **Patronus mini-game.** Each character's `patronus` field is a string
+  ("stag", "otter", "doe"). Match it to a TD Engine sprite to render
+  the player's patronus.
+
+**CORS:** Yes.
+
+### 16. DiceBear Avatars - `https://api.dicebear.com`
+
+**What it is.** Free, key-free avatar generation API. Pass a `seed` string
+and a style name (`avataaars`, `bottts`, `pixel-art`, `identicon`, etc.) and
+get back an SVG, PNG, or JSON avatar. 30+ art styles. Same seed → same avatar,
+so it's deterministic per user.
+
+**Relevance to a game engine.**
+
+- **Procedural NPC portraits.** Generate 100 NPCs by hashing their name →
+  seed → fetch PNG → upload to the engine as a Texture. Each NPC gets a
+  unique, recognizable face without shipping any portrait art.
+- **Multiplayer avatars without uploads.** Players pick a name; the engine
+  fetches `dicebear.com/9.x/bottts/png?seed=NAME` and uses that as their
+  in-game avatar. No file upload, no moderation needed.
+- **Identicon minimap icons.** Use the `identicon` style for low-detail
+  geometric icons - perfect for minimap blips that need to be unique but
+  don't need to look like faces.
+
+**Integration sketch (NPC portrait textures):**
+
+```javascript
+async function loadDiceBearTexture(seed, style = 'pixel-art', size = 64) {
+    const url = `https://api.dicebear.com/9.x/${style}/png?seed=${encodeURIComponent(seed)}&size=${size}`;
+    const blob = await (await fetch(url)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+    const ptr = Module._malloc(data.length);
+    Module.HEAPU8.set(data, ptr);
+    const texId = Module.ccall('td_create_texture', 'number',
+        ['number','number','number','number'],
+        [bitmap.width, bitmap.height, 4, ptr]);
+    Module._free(ptr);
+    return texId;
+}
+```
+
+**CORS:** Yes.
+
+### 17. Speedrun.com API - `https://www.speedrun.com/api/v1`
+
+**What it is.** Free, key-free REST API for the speedrun.com leaderboard
+database. Returns games, categories, runs (with player, time, video URL),
+players, levels, and recent world records. 30,000+ games indexed.
+
+**Relevance to a game engine.**
+
+- **"Ghost" replays in a racing game.** Fetch the top 10 runs for a track
+  in your game (if you've submitted it to speedrun.com) and use the run
+  times to spawn ghost opponents at the appropriate pace.
+- **In-game leaderboard browser.** Build a UI overlay that lists the top
+  runs for the player's current game, with player name + flag + time.
+  Tapping a row opens the run's video URL in a new tab.
+- **Daily challenge seeding.** Use `GET /leaderboards/:game/:category`
+  to find the current world record; the player's daily challenge is to
+  beat 80% of the WR time.
+
+**CORS:** Yes.
+
+### 18. TheMealDB - `https://www.themealdb.com/api/json/v1/1`
+
+**What it is.** Free, key-free recipe database (test key `1`). Returns
+meal names, instructions, ingredient lists, and high-res meal photo URLs.
+Hundreds of recipes from around the world. No auth - just use the literal
+key `1` in the URL.
+
+**Relevance to a game engine.**
+
+- **Cooking game.** A restaurant sim can fetch a real recipe per in-game
+  day, render the meal photo as a sprite, and use the ingredient list as
+  the player's prep checklist. Customer orders pull from `random.php`.
+- **Food-art tileset.** `filter.php?c=Seafood` returns dozens of meal
+  photos - download them all once and use as a sprite sheet for a match-3
+  cooking game (each tile is a dish).
+- **Culinary trivia.** Use the meal's `strArea` ("Italian", "Japanese")
+  as a category tag in a "guess the cuisine" minigame.
+
+**CORS:** Yes.
+
+### 19. Imgflip Meme API - `https://api.imgflip.com`
+
+**What it is.** Free, key-free (anonymous read; free account for captioning).
+`GET /get_memes` returns the top 100 most popular meme templates with their
+blank image URLs and box counts. `POST /caption_image` (needs account)
+captions a template and returns a finished meme PNG URL.
+
+**Relevance to a game engine.**
+
+- **Meme-driven party game.** A Jackbox-style game where each round
+  fetches a random meme template, players caption it via keyboard input,
+  and the engine renders the captions as text sprites over the meme image.
+- **Procedural NPC dialogue.** Caption a meme template with each NPC's
+  line of dialogue; the resulting image becomes the NPC's portrait
+  sprite. Memes-as-NPCs is a legitimate comedic art style (cf. *Meme Run*).
+- **Loading-screen entertainment.** While the WASM module downloads,
+  fetch and display a few captioned memes. The engine's SpriteBatch can
+  render the meme image + a typewriter text overlay.
+
+**CORS:** Yes (GET). The POST `caption_image` endpoint also works from
+the browser if you have an Imgflip account.
+
+### 20. Advice Slip API - `https://api.adviceslip.com`
+
+**What it is.** Free, key-free API that returns a random "advice slip"
+(slip = single piece of advice, ~12 words). `GET /advice` returns one
+random slip; `GET /advice/:id` returns a specific one. ~300 slips total.
+
+**Relevance to a game engine.**
+
+- **Loading-screen tips.** Every loading screen fetches a new slip and
+  shows it as a "Tip: ..." text sprite. Players see something fresh each
+  time without you writing 300 tips yourself.
+- **Wise-old-man NPC.** A hermit NPC in your RPG speaks only in API advice.
+  Each interaction calls `/advice` and the slip becomes his dialogue line.
+- **Death-screen flavor text.** When the player dies, fetch a slip and
+  show it as the epitaph. "Wear sunscreen" has never hit harder.
+
+**CORS:** Yes.
+
+### 21. Openverse - `https://api.openverse.org/v1`
+
+**What it is.** Free, key-free (anonymous tier; register for higher
+limits) aggregator of CC-licensed and public-domain media. Searches
+across Flickr, Wikimedia, Europeana, SoundCloud, ccMixter, and dozens
+more. Returns image and audio results with license metadata.
+
+**Relevance to a game engine.**
+
+- **Royalty-free texture art.** `GET /images?q=stone+texture&license=cc0`
+  returns hundreds of CC0 stone textures. Fetch the JPEG, decode to RGBA,
+  push into `Texture::create`. No more shipping textures in your repo.
+- **CC-licensed background music.** `GET /audio?q=chiptune&length=short`
+  returns short audio files. Download as ArrayBuffer, decode via Web Audio's
+  `decodeAudioData`, and feed the float32 samples to the engine's Mixer.
+- **License-safe asset browser.** Build an in-game asset picker that
+  surfaces only CC0 assets - ship your game without worrying about
+  attribution tracking for the 200 textures you embedded.
+
+**CORS:** Yes.
+
+### 22. JokeAPI - `https://v2.jokeapi.dev/joke`
+
+**What it is.** Free, key-free joke API. Returns jokes by category
+(Programming, Misc, Dark, Pun, Spooky, Christmas) with content filtering
+(safe-mode strips NSFW, religious, political). Supports single-part and
+two-part (setup + delivery) jokes.
+
+**Relevance to a game engine.**
+
+- **Comedy NPC.** A jester character tells a new joke every interaction.
+  Two-part jokes work especially well: the setup is the first dialogue
+  box, the delivery is the punchline after a 1-second beat.
+- **Loading-screen jokes.** Show a programming joke while the WASM
+  module downloads. Filter to `Programming` category + `safe-mode`.
+- **Joke-book item.** An in-game "Joke Book" item the player can read;
+  each page turn fetches a new joke. The book's UI is just a TD Engine
+  SpriteBatch + text layer.
+
+**CORS:** Yes.
+
+### 23. ZenQuotes - `https://zenquotes.io/api`
+
+**What it is.** Free, key-free inspirational quote API. `GET /random`
+returns one random quote with author; `GET /quotes` returns 50 random
+quotes; `GET /today` returns the quote of the day. Replaces the
+now-defunct Quotable.io.
+
+**Relevance to a game engine.**
+
+- **Loading screen "quote of the day".** Same as Advice Slip but with
+  named authors - feels more literary. Pull once at boot, cache in
+  `localStorage`, refresh daily.
+- **Tombstone epitaphs.** A roguelike where each dead run shows a
+  philosophical quote on the tombstone.
+- **Wisdom-granting items.** A "Book of Wisdom" item that, when read,
+  displays a random quote in a modal overlay rendered by the engine.
+
+**CORS:** Yes.
+
+### 24. Freesound - `https://freesound.org/apiv2`
+
+**What it is.** The largest CC-licensed sound effects library on the
+web. 800,000+ sounds (footsteps, gunshots, ambient loops, music stabs).
+Free OAuth2 token required (instant registration). Search, preview
+(low-quality MP3), and download (full-quality WAV/FLAC) endpoints.
+
+**Relevance to a game engine.**
+
+- **Procedural SFX library.** A game with hundreds of footstep variants,
+  gunshots, and UI clicks would normally ship a 50MB audio bundle. With
+  Freesound, fetch on demand: `GET /search/text/?query=footstep+wood`
+  returns 30 sounds, the engine plays whichever one matches the player's
+  current surface.
+- **Crowd-sourced ambient beds.** `GET /search/text/?query=forest+ambient`
+  returns 30+ field recordings. Pick one per level for a procedural
+  soundscape.
+- **Foley minigame.** A "foley artist" game where the player matches
+  real recorded sounds to on-screen actions.
+
+**Note:** Requires an OAuth2 bearer token. Do NOT embed the token in
+client-side code that ships to all users - proxy through your own
+server, or pre-fetch the sounds at build time and bundle them. See the
+"Security" section below.
+
+**CORS:** Yes.
+
+### 25. Unsplash - `https://api.unsplash.com`
+
+**What it is.** High-quality stock photography (4M+ images) from
+professional photographers. Free OAuth2 Client-ID required (instant
+registration). 50 requests/hour anonymous, 5000/hour with a token.
+
+**Relevance to a game engine.**
+
+- **Photoreal backdrops.** A visual novel set in real-world locations -
+  `GET /search/photos?query=paris+cafe` returns gorgeous 4K photos. Load
+  each as a full-screen background Texture.
+- **Procedural card art.** A trading-card game where each card's art is
+  a curated Unsplash photo matching its keyword. "Mountain" card →
+  Unsplash mountain photo → card art.
+- **Real-world texture source.** `GET /search/photos?query=brick+wall+texture`
+  → use as the engine's tile texture for a brick wall.
+
+**Note:** Same as Freesound - requires a Client-ID. Proxy or pre-fetch
+at build time; don't ship the key in client JS.
+
+**CORS:** Yes.
+
 ---
 
 ## General guidance
@@ -333,7 +647,37 @@ takes raw RGBA bytes - perfect for this.
 TD Engine's WASM bridge is intentionally HTTP-agnostic - the browser already
 has `fetch()`. The workflow is: fetch in JS → parse JSON in JS → push the
 results into the engine's ECS world via `Module.cwrap('td_*')`. Any
-CORS-enabled REST API works. The 12 APIs surveyed above cover weather,
-avatars, trivia, monsters, maps, words, code, encyclopedia, prices, chess,
-and astronomy - enough to build dozens of games without bundling a single
-data file.
+CORS-enabled REST API works. The 25 APIs surveyed above cover:
+
+| # | Domain | APIs |
+|---|--------|------|
+| 1-2 | Game platform helpers | News Targeted (Roblox/Discord), GitHub |
+| 3-4 | Real-world weather | NWS, Open-Meteo |
+| 5 | Trivia / quiz content | OpenTriviaDatabase |
+| 6 | Monster bestiary | PokeAPI |
+| 7 | Real-world maps | OpenStreetMap |
+| 8 | Word games | Datamuse |
+| 9 | Encyclopedia | Wikipedia |
+| 10 | In-game economy | CoinGecko |
+| 11 | Puzzles | Chess.com |
+| 12 | Space art | NASA |
+| 13 | Sci-fi franchise data | SWAPI (Star Wars) |
+| 14 | Fantasy franchise data | An API of Ice And Fire (GoT) |
+| 15 | Magic-school franchise | Harry Potter API |
+| 16 | Procedural avatars | DiceBear |
+| 17 | Leaderboards / replays | Speedrun.com |
+| 18 | Cooking game assets | TheMealDB |
+| 19 | Meme generation | Imgflip |
+| 20 | Loading-screen tips | Advice Slip |
+| 21 | CC0 media library | Openverse |
+| 22 | Jokes / comedy NPC | JokeAPI |
+| 23 | Inspirational quotes | ZenQuotes |
+| 24 | CC-licensed SFX | Freesound (free key) |
+| 25 | High-quality photography | Unsplash (free key) |
+
+All 25 are CORS-enabled (so they work directly from the browser). 23 of 25
+are key-free; the remaining 2 (Freesound, Unsplash) need a free OAuth2 token
+that you should proxy through your own server rather than embed in client
+JS. That's enough franchise data, art, audio, recipes, memes, jokes, and
+real-world context to build dozens of games without bundling a single data
+file.
