@@ -68,4 +68,43 @@ public:
     }
 };
 
+// -----------------------------------------------------------------------------
+// BeatSystem - ticks every BeatTrackerComponent, fires on-beat callbacks,
+// advances nextBeatTime, and exposes isOnBeat() for game code.
+//
+// Implementation follows the design in docs/RHYTHM_MECHANICS.md:
+//   - Per frame: if engineTime >= nextBeatTime, fire beat event + advance.
+//   - On-beat window is TWO half-ranges (not one symmetric window) so the
+//     forward-looking half stays reachable after nextBeatTime advances.
+//   - Loop detection: if engineTime goes backward (e.g. song looped),
+//     hard-reset nextBeatTime to avoid drift accumulation.
+// -----------------------------------------------------------------------------
+class BeatSystem : public System {
+public:
+    void update(World* world, float dt) override;
+    ComponentMask getRequiredComponents() const override {
+        return componentBit(ComponentType::BeatTracker);
+    }
+
+    // Returns true if the given tracker's songTime is inside the on-beat window.
+    // Uses the two-half-window trick.
+    bool isOnBeat(const struct BeatTrackerComponent& tracker, float engineTime) const;
+
+    // Register a beat-tick callback. Called with (beatCount, beatTime) on each
+    // beat fire. The callback is invoked from within update(); it must not
+    // mutate the World structure (read-only is fine).
+    using BeatCallback = void (*)(int beatCount, float beatTime);
+    void setBeatCallback(BeatCallback cb) { m_callback = cb; }
+
+    // Engine-time source. Override in tests; production uses td::g_time.
+    // We accept a function pointer so the system has no hard dependency on
+    // the global TimeState (which is in platform.h, not always available).
+    using TimeSource = float (*)();
+    void setTimeSource(TimeSource ts) { m_timeSource = ts; }
+
+private:
+    BeatCallback m_callback = nullptr;
+    TimeSource   m_timeSource = nullptr;
+};
+
 } // namespace td

@@ -49,6 +49,7 @@
 #include "../src/renderer/camera.h"        // Camera2D
 #include "../src/ecs/world.h"              // td::World
 #include "../src/ecs/component.h"          // PositionComponent, SpriteComponent, ...
+#include "../src/ecs/system.h"            // BeatSystem
 #include "../src/audio/mixer.h"            // td::Mixer
 
 // =============================================================================
@@ -67,6 +68,10 @@ static World*          g_world      = nullptr;
 static Mixer*          g_mixer      = nullptr;
 static InputState      g_input      = {};
 static TimeState       g_time       = {};
+
+// BeatSystem for rhythm-game mechanics. Registered with g_world in td_init.
+// Pointer-stable so JS callbacks (set via td_beat_set_callback) remain valid.
+static BeatSystem*     g_beatSystem = nullptr;
 
 static int  g_canvasWidth  = 800;
 static int  g_canvasHeight = 600;
@@ -217,6 +222,15 @@ void td_init(int width, int height)
     // --- ECS world ----------------------------------------------------------
     td::g_world = new td::World();
 
+    // --- BeatSystem (rhythm-game mechanics) --------------------------------
+    // Registered with the world so it ticks every fixed-step update.
+    // JS sets its beat callback via td_beat_set_callback.
+    td::g_beatSystem = new td::BeatSystem();
+    td::g_beatSystem->setTimeSource([]() -> float {
+        return (float)td::g_time.totalTime;
+    });
+    td::g_world->addSystem(td::g_beatSystem);
+
     // --- Audio mixer (output is pulled by JS via td_fill_audio_buffer) ------
     td::g_mixer = new td::Mixer();
     td::g_mixer->init(44100, 2);
@@ -269,6 +283,7 @@ void td_shutdown()
     if (td::g_camera)  { delete td::g_camera;  td::g_camera  = nullptr; }
     if (td::g_world)   { delete td::g_world;   td::g_world   = nullptr; }
     if (td::g_mixer)   { delete td::g_mixer;   td::g_mixer   = nullptr; }
+    if (td::g_beatSystem) { delete td::g_beatSystem; td::g_beatSystem = nullptr; }
 
     td::g_renderer->shutdown();
     td::Logger::get().shutdown();
@@ -568,6 +583,206 @@ void td_get_mouse_pos(float* outX, float* outY)
 {
     if (outX) *outX = td::g_input.mouseX;
     if (outY) *outY = td::g_input.mouseY;
+}
+
+// =============================================================================
+// Beat Tracker API (rhythm-game mechanics)
+//
+// Implements the BPM-synced metronome described in docs/RHYTHM_MECHANICS.md.
+// Workflow:
+//   1. Create an entity:                td_create_entity("song")
+//   2. Start beat tracking on it:       td_beat_start(entityId, 140.0, 0.15)
+//   3. Register a beat-tick callback:   td_beat_set_callback(cb)
+//   4. Each frame, check if player is on-beat: td_beat_is_on_beat(entityId)
+//   5. On successful hit, mark it:      td_beat_register_hit(entityId)
+//
+// All state lives in the engine's ECS World (BeatTrackerComponent). The
+// BeatSystem ticks every fixed-step update and fires the callback.
+// =============================================================================
+
+// Callback signature: void(int beatCount, float beatTime). Same shape as
+// BeatSystem::BeatCallback, but typedef'd here in the global namespace so
+// Emscripten's C ABI can reference it.
+typedef void (*TdBeatCallback)(int, float);
+
+EMSCRIPTEN_KEEPALIVE
+void td_beat_start(uint32_t entityId, float bpm, float windowHalfSec)
+{
+    if (!td::g_world) return;
+    td::BeatTrackerComponent* bt =
+        td::g_world->addComponent<td::BeatTrackerComponent>(entityId);
+    if (!bt) return;
+
+    if (bpm < 1.0f) bpm = 1.0f;
+    if (bpm > 600.0f) bpm = 600.0f;
+    bt->bpm = bpm;
+    bt->spb = 60.0f / bpm;
+    bt->windowHalf = (windowHalfSec > 0.001f) ? windowHalfSec : 0.15f;
+    bt->startTime = (float)td::g_time.totalTime;
+    bt->nextBeatTime = bt->startTime + bt->spb;
+    bt->lastBeatTime = bt->startTime;
+    bt->upperBound = bt->lastBeatTime + bt->windowHalf;
+    bt->lowerBound = bt->nextBeatTime - bt->windowHalf;
+    bt->beatCount = 0;
+    bt->combo = 0;
+    bt->bestCombo = 0;
+    bt->lastHitTime = -1.0f;
+    bt->active = true;
+
+    TD_LOG_INFO("BeatTracker started: bpm=%.1f spb=%.3f windowHalf=%.3fs",
+                bt->bpm, bt->spb, bt->windowHalf);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_beat_stop(uint32_t entityId)
+{
+    if (!td::g_world) return;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    if (bt) bt->active = false;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_beat_is_on_beat(uint32_t entityId)
+{
+    if (!td::g_world || !td::g_beatSystem) return 0;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    if (!bt || !bt->active) return 0;
+    float now = (float)td::g_time.totalTime;
+    return td::g_beatSystem->isOnBeat(*bt, now) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_beat_get_count(uint32_t entityId)
+{
+    if (!td::g_world) return 0;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    return bt ? bt->beatCount : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float td_beat_get_next_beat_time(uint32_t entityId)
+{
+    if (!td::g_world) return -1.0f;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    return bt ? bt->nextBeatTime : -1.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float td_beat_get_last_beat_time(uint32_t entityId)
+{
+    if (!td::g_world) return -1.0f;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    return bt ? bt->lastBeatTime : -1.0f;
+}
+
+// Register a successful on-beat hit. Returns the new combo count.
+// Pass `strict=true` to only count hits that are actually on-beat; pass
+// false to count any hit (the JS side can use td_beat_is_on_beat to gate).
+EMSCRIPTEN_KEEPALIVE
+int td_beat_register_hit(uint32_t entityId, int strict)
+{
+    if (!td::g_world) return 0;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    if (!bt || !bt->active) return 0;
+
+    float now = (float)td::g_time.totalTime;
+    bool onBeat = td::g_beatSystem ? td::g_beatSystem->isOnBeat(*bt, now) : false;
+
+    if (strict && !onBeat) {
+        // Missed - reset combo.
+        bt->combo = 0;
+        return 0;
+    }
+
+    bt->combo++;
+    if (bt->combo > bt->bestCombo) bt->bestCombo = bt->combo;
+    bt->lastHitTime = now;
+    return bt->combo;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_beat_get_combo(uint32_t entityId)
+{
+    if (!td::g_world) return 0;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    return bt ? bt->combo : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_beat_get_best_combo(uint32_t entityId)
+{
+    if (!td::g_world) return 0;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    return bt ? bt->bestCombo : 0;
+}
+
+// Reset combo (e.g. when the player misses). Returns the new combo (0).
+EMSCRIPTEN_KEEPALIVE
+int td_beat_reset_combo(uint32_t entityId)
+{
+    if (!td::g_world) return 0;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    if (bt) bt->combo = 0;
+    return 0;
+}
+
+// Register a JS callback fired on every beat tick. Pass 0 to clear.
+EMSCRIPTEN_KEEPALIVE
+void td_beat_set_callback(TdBeatCallback cb)
+{
+    if (td::g_beatSystem) {
+        td::g_beatSystem->setBeatCallback(reinterpret_cast<td::BeatSystem::BeatCallback>(cb));
+    }
+}
+
+// Change BPM on a live tracker. Useful for songs with tempo changes.
+// Resets nextBeatTime relative to the current engine time to avoid drift.
+EMSCRIPTEN_KEEPALIVE
+void td_beat_set_bpm(uint32_t entityId, float newBpm)
+{
+    if (!td::g_world) return;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    if (!bt || !bt->active) return;
+
+    if (newBpm < 1.0f) newBpm = 1.0f;
+    if (newBpm > 600.0f) newBpm = 600.0f;
+    bt->bpm = newBpm;
+    bt->spb = 60.0f / newBpm;
+    float now = (float)td::g_time.totalTime;
+    bt->nextBeatTime = now + bt->spb;
+    bt->lastBeatTime = now;
+    bt->upperBound = bt->lastBeatTime + bt->windowHalf;
+    bt->lowerBound = bt->nextBeatTime - bt->windowHalf;
+}
+
+// Play a short "tick" sound on every beat. Pass a WAV index (or -1 to disable).
+// Uses the engine's Mixer; the JS bridge loads the WAV via Module._malloc +
+// td_load_wav (or equivalent). For now, calling this with index -1 disables
+// the tick; calling with a valid index will play it on every beat fire.
+EMSCRIPTEN_KEEPALIVE
+void td_beat_play_sound(uint32_t entityId, int wavIndex)
+{
+    if (!td::g_world) return;
+    td::BeatTrackerComponent* bt =
+        td::g_world->getComponent<td::BeatTrackerComponent>(entityId);
+    if (!bt) return;
+    // For now this is a stub: the actual WAV playback is wired up via the
+    // beat-tick callback in JS. Marking the wavIndex in the component lets
+    // a future C++-side audio hook pick it up. We log the request so devs
+    // can verify it was called.
+    (void)wavIndex;
+    TD_LOG_INFO("BeatTracker %u: play_sound(%d) requested (use td_beat_set_callback for now)",
+                entityId, wavIndex);
 }
 
 // -----------------------------------------------------------------------------

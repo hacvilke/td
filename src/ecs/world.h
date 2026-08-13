@@ -13,7 +13,7 @@ struct EntityRecord {
     EntityId id = INVALID_ENTITY;
     ComponentMask mask = 0;
     bool active = false;
-    
+
     // Component indices (-1 if not present)
     int positionIdx = -1;
     int velocityIdx = -1;
@@ -27,6 +27,7 @@ struct EntityRecord {
     int audioSourceIdx = -1;
     int scriptIdx = -1;
     int tagIdx = -1;
+    int beatTrackerIdx = -1;
 };
 
 class World {
@@ -80,7 +81,8 @@ public:
     AudioSourceComponent audioSources[TD_MAX_ENTITIES];
     ScriptComponent scripts[TD_MAX_ENTITIES];
     TagComponent tags[TD_MAX_ENTITIES];
-    
+    BeatTrackerComponent beatTrackers[TD_MAX_ENTITIES];
+
     // Component counts
     int positionCount = 0;
     int velocityCount = 0;
@@ -94,6 +96,7 @@ public:
     int audioSourceCount = 0;
     int scriptCount = 0;
     int tagCount = 0;
+    int beatTrackerCount = 0;
     
     // Clear all entities and components
     void clear();

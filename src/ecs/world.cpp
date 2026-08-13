@@ -29,6 +29,7 @@ DECL_COMPONENT_SPECIALIZATION(CameraComponent)
 DECL_COMPONENT_SPECIALIZATION(AudioSourceComponent)
 DECL_COMPONENT_SPECIALIZATION(ScriptComponent)
 DECL_COMPONENT_SPECIALIZATION(TagComponent)
+DECL_COMPONENT_SPECIALIZATION(BeatTrackerComponent)
 
 #undef DECL_COMPONENT_SPECIALIZATION
 
@@ -66,6 +67,7 @@ EntityId World::createEntity(const char* name) {
     record.audioSourceIdx = -1;
     record.scriptIdx = -1;
     record.tagIdx = -1;
+    record.beatTrackerIdx = -1;
     
     m_entityCount++;
     
@@ -95,6 +97,7 @@ void World::destroyEntity(EntityId id) {
     removeComponent<AudioSourceComponent>(id);
     removeComponent<ScriptComponent>(id);
     removeComponent<TagComponent>(id);
+    removeComponent<BeatTrackerComponent>(id);
     
     record.id = INVALID_ENTITY;
     record.mask = 0;
@@ -250,6 +253,7 @@ void World::clear() {
     audioSourceCount = 0;
     scriptCount = 0;
     tagCount = 0;
+    beatTrackerCount = 0;
 }
 
 EntityRecord* World::getEntityRecord(EntityId id) {
@@ -397,6 +401,12 @@ IMPL_ADD_COMPONENT(TagComponent, tags, tagCount, tagIdx, ComponentType::Tag)
 IMPL_GET_COMPONENT(TagComponent, tags, tagIdx)
 IMPL_HAS_COMPONENT(TagComponent, ComponentType::Tag)
 IMPL_REMOVE_COMPONENT(TagComponent, tags, tagCount, tagIdx, ComponentType::Tag)
+
+// BeatTracker
+IMPL_ADD_COMPONENT(BeatTrackerComponent, beatTrackers, beatTrackerCount, beatTrackerIdx, ComponentType::BeatTracker)
+IMPL_GET_COMPONENT(BeatTrackerComponent, beatTrackers, beatTrackerIdx)
+IMPL_HAS_COMPONENT(BeatTrackerComponent, ComponentType::BeatTracker)
+IMPL_REMOVE_COMPONENT(BeatTrackerComponent, beatTrackers, beatTrackerCount, beatTrackerIdx, ComponentType::BeatTracker)
 
 // ==================== Built-in Systems ====================
 

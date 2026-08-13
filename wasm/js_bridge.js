@@ -407,6 +407,161 @@
     },
 
     // -------------------------------------------------------------------------
+    // Beat Tracker API (rhythm-game mechanics)
+    //
+    // Wraps the td_beat_* C functions with a clean JS interface. See
+    // docs/RHYTHM_MECHANICS.md for the design and web/examples/beat_demo.js
+    // for a complete sample game.
+    //
+    // Example:
+    //   const song = TDBridge.createEntity('song');
+    //   TDBridge.beatStart(song, 140, 0.15);    // 140 BPM, 150ms half-window
+    //   TDBridge.onBeat((count, time) => {
+    //     console.log(`Beat ${count} at ${time.toFixed(3)}s`);
+    //   });
+    //   // later, when player presses a key:
+    //   if (TDBridge.beatIsOnBeat(song)) {
+    //     const combo = TDBridge.beatRegisterHit(song, /*strict=*/true);
+    //     console.log(`Combo: ${combo}`);
+    //   }
+    // -------------------------------------------------------------------------
+    _beatApi: null,  // cached cwrap handles (created on first use)
+
+    _cacheBeatApi() {
+      if (this._beatApi) return this._beatApi;
+      const M = this.wasmExports;
+      this._beatApi = {
+        start:          M.cwrap('td_beat_start',            null,   ['number','number','number']),
+        stop:           M.cwrap('td_beat_stop',             null,   ['number']),
+        isOnBeat:       M.cwrap('td_beat_is_on_beat',       'number', ['number']),
+        getCount:       M.cwrap('td_beat_get_count',        'number', ['number']),
+        getNextBeat:    M.cwrap('td_beat_get_next_beat_time', 'number', ['number']),
+        getLastBeat:    M.cwrap('td_beat_get_last_beat_time', 'number', ['number']),
+        registerHit:    M.cwrap('td_beat_register_hit',     'number', ['number','number']),
+        getCombo:       M.cwrap('td_beat_get_combo',        'number', ['number']),
+        getBestCombo:   M.cwrap('td_beat_get_best_combo',   'number', ['number']),
+        resetCombo:     M.cwrap('td_beat_reset_combo',      'number', ['number']),
+        setCallback:    M.cwrap('td_beat_set_callback',     null,   ['number']),
+        setBpm:         M.cwrap('td_beat_set_bpm',          null,   ['number','number']),
+        playSound:      M.cwrap('td_beat_play_sound',       null,   ['number','number']),
+        createEntity:   M.cwrap('td_create_entity',         'number', ['string']),
+        setPos:         M.cwrap('td_entity_set_position',   null,   ['number','number','number']),
+        setSprite:      M.cwrap('td_entity_set_sprite',     null,   ['number','number','number','number','number','number','number']),
+        destroy:        M.cwrap('td_entity_destroy',        null,   ['number']),
+        isValid:        M.cwrap('td_entity_is_valid',       'number', ['number']),
+      };
+      return this._beatApi;
+    },
+
+    // Start beat tracking on an entity. BPM 60-600, windowHalf in seconds
+    // (typical: 0.10 - 0.20 for forgiving, 0.05 - 0.08 for hardcore).
+    beatStart(entityId, bpm, windowHalfSec) {
+      this._cacheBeatApi().start(entityId, bpm, windowHalfSec);
+    },
+
+    beatStop(entityId) {
+      this._cacheBeatApi().stop(entityId);
+    },
+
+    // Returns true if the player's current timing is inside the on-beat window.
+    beatIsOnBeat(entityId) {
+      return !!this._cacheBeatApi().isOnBeat(entityId);
+    },
+
+    beatGetCount(entityId) {
+      return this._cacheBeatApi().getCount(entityId);
+    },
+
+    beatGetNextBeatTime(entityId) {
+      return this._cacheBeatApi().getNextBeat(entityId);
+    },
+
+    beatGetLastBeatTime(entityId) {
+      return this._cacheBeatApi().getLastBeat(entityId);
+    },
+
+    // Register a hit. If strict=true, misses reset combo to 0.
+    // Returns the new combo count.
+    beatRegisterHit(entityId, strict) {
+      return this._cacheBeatApi().registerHit(entityId, strict ? 1 : 0);
+    },
+
+    beatGetCombo(entityId) {
+      return this._cacheBeatApi().getCombo(entityId);
+    },
+
+    beatGetBestCombo(entityId) {
+      return this._cacheBeatApi().getBestCombo(entityId);
+    },
+
+    beatResetCombo(entityId) {
+      return this._cacheBeatApi().resetCombo(entityId);
+    },
+
+    beatSetBpm(entityId, newBpm) {
+      this._cacheBeatApi().setBpm(entityId, newBpm);
+    },
+
+    // Register a JS callback fired on every beat tick.
+    // Signature: (beatCount: number, beatTime: number) => void
+    // The callback is invoked from within the engine's fixed-step update,
+    // so it must be fast (<1ms) and must not call back into TDBridge in a
+    // way that mutates the World mid-iteration.
+    onBeat(callback) {
+      if (typeof callback !== 'function') {
+        // Clear any existing callback.
+        this._cacheBeatApi().setCallback(0);
+        return;
+      }
+      // addFunction: converts a JS function into a callable C function pointer.
+      // Signature 'vif' = void(int, float). Requires -s ALLOW_TABLE_GROWTH=1
+      // and Module.addFunction in EXPORTED_RUNTIME_METHODS.
+      const M = this.wasmExports;
+      if (typeof M.addFunction !== 'function') {
+        throw new Error('Module.addFunction is not available. The WASM build ' +
+                        'needs -s ALLOW_TABLE_GROWTH=1 and addFunction in ' +
+                        'EXPORTED_RUNTIME_METHODS.');
+      }
+      const ptr = M.addFunction(callback, 'vif');
+      this._cacheBeatApi().setCallback(ptr);
+    },
+
+    // -------------------------------------------------------------------------
+    // Entity helpers (high-level wrappers around td_create_entity + the
+    // td_entity_set_* family). Lets web game devs create entities with a
+    // fluent one-liner instead of repeating cwrap boilerplate.
+    // -------------------------------------------------------------------------
+
+    // createEntity(name?) -> entityId (uint32)
+    // Creates a bare entity. Use setEntityPosition / setEntitySprite to
+    // attach components.
+    createEntity(name) {
+      return this._cacheBeatApi().createEntity(name || 'Entity');
+    },
+
+    setEntityPosition(entityId, x, y) {
+      this._cacheBeatApi().setPos(entityId, x, y);
+    },
+
+    // setEntitySprite(entityId, w, h, [r,g,b,a])
+    // r,g,b,a default to white (1,1,1,1).
+    setEntitySprite(entityId, w, h, r, g, b, a) {
+      this._cacheBeatApi().setSprite(entityId, w, h,
+        r === undefined ? 1 : r,
+        g === undefined ? 1 : g,
+        b === undefined ? 1 : b,
+        a === undefined ? 1 : a);
+    },
+
+    destroyEntity(entityId) {
+      this._cacheBeatApi().destroy(entityId);
+    },
+
+    isEntityValid(entityId) {
+      return !!this._cacheBeatApi().isValid(entityId);
+    },
+
+    // -------------------------------------------------------------------------
     // _emitLog(level, message) -> void
     // -------------------------------------------------------------------------
     _emitLog(level, message) {

@@ -19,6 +19,7 @@ enum class ComponentType : uint8_t {
     MeshRenderer,
     Script,
     Tag,
+    BeatTracker,
     COUNT
 };
 
@@ -152,6 +153,34 @@ struct TagComponent {
     char name[64] = "Entity";
     char tag[32] = "Untagged";
     bool enabled = true;
+};
+
+// ---- Rhythm / Beat Components ----------------------------------------------
+// Implements the BPM-synced metronome + on-beat detection described in
+// docs/RHYTHM_MECHANICS.md. Attach to any entity; the BeatSystem will tick
+// it every frame. Multiple entities can each have their own BeatTracker
+// (e.g. one per song layer, one per player for combo tracking).
+//
+// Key insight from the source video: the on-beat window must be implemented
+// as TWO half-windows, not one symmetric window, because nextBeat advances
+// the moment the beat fires:
+//   upperBound = currentBeat + windowHalfSec   (forward-looking from last beat)
+//   lowerBound = nextBeat   - windowHalfSec    (backward-looking from next beat)
+// "On beat" = (songTime >= upperBound_from_prev) OR (songTime <= lowerBound_to_next)
+struct BeatTrackerComponent {
+    float bpm = 120.0f;              // beats per minute
+    float spb = 0.5f;                // seconds per beat (cached: 60/bpm)
+    float startTime = 0.0f;          // engine time when tracking started
+    float nextBeatTime = 0.0f;       // engine time of next beat tick
+    float lastBeatTime = 0.0f;       // engine time of most recent beat tick
+    float windowHalf = 0.15f;        // half-width of on-beat tolerance (sec)
+    float upperBound = 0.0f;         // lastBeatTime + windowHalf
+    float lowerBound = 0.0f;         // nextBeatTime - windowHalf
+    int   beatCount = 0;             // total beats elapsed since start
+    float lastHitTime = -1.0f;       // engine time of last successful on-beat press
+    int   combo = 0;                 // consecutive on-beat hits (resets on miss)
+    int   bestCombo = 0;             // highest combo reached
+    bool  active = false;            // set true by td_start_beat_track
 };
 
 } // namespace td
