@@ -34,7 +34,38 @@ DECL_COMPONENT_SPECIALIZATION(BeatTrackerComponent)
 #undef DECL_COMPONENT_SPECIALIZATION
 
 World::World() {
-    memset(m_entities, 0, sizeof(m_entities));
+    // CRITICAL: every entity slot MUST start with id == INVALID_ENTITY.
+    // findFreeEntitySlot() looks for slots where id == INVALID_ENTITY, and
+    // findEntityIndex() skips slots where id == INVALID_ENTITY. If we leave
+    // slots with id == 0 (e.g. via memset(0)), the first createEntity() call
+    // fails with "Maximum entities reached" and returns INVALID_ENTITY, which
+    // then causes null-pointer crashes in callers like
+    //   PositionComponent* pos = world.addComponent<PositionComponent>(id);
+    //   pos->x = 30;   // <-- null deref, crash
+    //
+    // memset(m_entities, 0, ...) is WRONG because INVALID_ENTITY = 0xFFFFFFFF.
+    // The EntityRecord default member initializers (id = INVALID_ENTITY,
+    // mask = 0, active = false, *Idx = -1) already do the right thing, but
+    // we set them explicitly here for defense-in-depth so a future struct
+    // change can't silently break this invariant.
+    for (int i = 0; i < TD_MAX_ENTITIES; i++) {
+        m_entities[i].id             = INVALID_ENTITY;
+        m_entities[i].mask           = 0;
+        m_entities[i].active         = false;
+        m_entities[i].positionIdx    = -1;
+        m_entities[i].velocityIdx    = -1;
+        m_entities[i].spriteIdx      = -1;
+        m_entities[i].rigidBodyIdx   = -1;
+        m_entities[i].colliderIdx    = -1;
+        m_entities[i].transform3DIdx = -1;
+        m_entities[i].meshRendererIdx= -1;
+        m_entities[i].lightIdx       = -1;
+        m_entities[i].cameraIdx      = -1;
+        m_entities[i].audioSourceIdx = -1;
+        m_entities[i].scriptIdx      = -1;
+        m_entities[i].tagIdx         = -1;
+        m_entities[i].beatTrackerIdx = -1;
+    }
     memset(m_systems, 0, sizeof(m_systems));
 }
 

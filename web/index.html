@@ -11,7 +11,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css?v=3">
+    <link rel="stylesheet" href="style.css?v=4">
     <style>
         /* ---- Game selector bar ---- */
         #game-selector {
@@ -169,10 +169,10 @@
     <!-- ====================================================================== -->
 
     <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
-    <script src="td-engine.js?v=3"></script>
+    <script src="td-engine.js?v=4"></script>
 
     <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
-    <script src="js_bridge.js?v=3"></script>
+    <script src="js_bridge.js?v=4"></script>
 
     <!-- Sample game script is injected at runtime based on ?game= query param. -->
 
@@ -187,7 +187,7 @@
                 label: 'VOID RUNNER',
                 title: 'VOID RUNNER',
                 subtitle: 'A space shooter on TD Engine',
-                script: 'examples/voidrunner.js?v=3',
+                script: 'examples/voidrunner.js?v=4',
                 controls: [
                     { key: 'A / D  ← →',   action: 'Move left / right' },
                     { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
@@ -207,7 +207,7 @@
                 label: 'PONG',
                 title: 'PONG',
                 subtitle: 'Classic 2-player paddle game',
-                script: 'examples/pong.js?v=3',
+                script: 'examples/pong.js?v=4',
                 controls: [
                     { key: 'W / S',          action: 'Left paddle (player)' },
                     { key: '↑ / ↓',          action: 'Right paddle (AI)' },
@@ -220,7 +220,7 @@
                 label: 'BEAT DEMO',
                 title: 'BEAT DEMO',
                 subtitle: 'Rhythm game — tap on the beat to score',
-                script: 'examples/beat_demo.js?v=3',
+                script: 'examples/beat_demo.js?v=4',
                 controls: [
                     { key: 'Space', action: 'Hit (catch the falling note)' },
                     { key: 'R',     action: 'Restart after game over' },
@@ -269,9 +269,11 @@
 
         // =====================================================================
         // Populate the controls overlay with the active game's metadata.
+        // NOTE: document.title is intentionally NOT changed — the brand title
+        // "TD Engine - Web Player" stays constant regardless of which game is
+        // active, per user request.
         // =====================================================================
         (function populateControls() {
-            document.title = META.title + ' — TD Engine';
             document.getElementById('game-title').textContent = META.title;
             document.getElementById('game-subtitle').textContent = META.subtitle;
             const grid = document.getElementById('controls-grid');

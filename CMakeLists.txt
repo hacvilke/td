@@ -202,9 +202,16 @@ else()
         target_link_libraries(test_ecs    PRIVATE td-engine)
         add_executable(test_physics tests/test_physics.cpp)
         target_link_libraries(test_physics PRIVATE td-engine)
+        # Regression test for the World constructor bug (memset(0) left
+        # entity slots with id=0 instead of INVALID_ENTITY, which made
+        # every createEntity() call fail with "Maximum entities reached").
+        # Uses a stub logger so it builds without windows.h on Linux CI.
+        add_executable(test_world_init tests/test_world_init.cpp tests/stub_logger.cpp)
+        target_link_libraries(test_world_init PRIVATE td-engine)
         add_test(NAME math COMMAND test_math)
         add_test(NAME ecs   COMMAND test_ecs)
         add_test(NAME physics COMMAND test_physics)
+        add_test(NAME world_init COMMAND test_world_init)
     endif()
 
     # --- Editor -------------------------------------------------------------
