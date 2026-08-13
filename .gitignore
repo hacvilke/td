@@ -1,0 +1,59 @@
+# Build outputs
+build/
+bin/
+obj/
+lib/
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.a
+*.so
+*.dylib
+
+# IDE files
+.vs/
+.vscode/
+*.sln
+*.vcxproj*
+*.user
+*.suo
+*.opensdf
+*.sdf
+.idea/
+*.iml
+cmake-build-*/
+
+# Debug files
+*.pdb
+*.ilk
+*.idb
+*.exp
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log files
+*.log
+
+# Generated files
+*.wasm
+*.js.mem
+
+# Node modules (for web build)
+node_modules/
+package-lock.json
+
+# Emscripten cache
+.emscripten_cache/
+
+# Editor config
+*.editorconfig
+
+# Temporary files
+*.tmp
+*.temp
+*~

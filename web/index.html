@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TD Engine — Web Player</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading screen -->
+    <div id="loading">
+        <h1>TD Engine</h1>
+        <p>Loading game engine...</p>
+        <div id="progress-bar">
+            <div id="progress-fill"></div>
+        </div>
+        <p id="loading-status">Initializing WebAssembly...</p>
+    </div>
+
+    <!-- Game canvas -->
+    <canvas id="game-canvas" width="800" height="600"></canvas>
+
+    <!-- Controls overlay -->
+    <div id="overlay">
+        <span>Arrow Keys / WASD — Move</span>
+        <span>Space — Jump</span>
+        <span>Escape — Pause</span>
+    </div>
+
+    <script src="../wasm/js_bridge.js"></script>
+    <script>
+        window.addEventListener('load', async () => {
+            const loadingEl = document.getElementById('loading');
+            const statusEl = document.getElementById('loading-status');
+
+            try {
+                statusEl.textContent = 'Loading WebGL context...';
+
+                TDEngine.onLog((msg) => {
+                    console.log('[Engine]', msg);
+                });
+
+                TDEngine.onReady(() => {
+                    // Hide loading screen
+                    loadingEl.style.opacity = '0';
+                    setTimeout(() => {
+                        loadingEl.style.display = 'none';
+                    }, 500);
+
+                    // Start the game loop
+                    TDEngine.start();
+                });
+
+                statusEl.textContent = 'Initializing engine...';
+                await TDEngine.init('game-canvas');
+
+            } catch (error) {
+                statusEl.textContent = 'Error: ' + error.message;
+                console.error('Engine initialization failed:', error);
+            }
+        });
+    </script>
+</body>
+</html>
