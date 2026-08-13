@@ -6,6 +6,32 @@
 
 namespace td {
 
+// Forward declarations of every explicit specialization.
+// clang (emcc) requires these to be visible BEFORE the first implicit
+// instantiation (GCC and MSVC are lenient about this, clang is not).
+// The actual definitions live further down, emitted by the IMPL_* macros.
+#define DECL_COMPONENT_SPECIALIZATION(Type) \
+    template<> Type*      World::addComponent<Type>(EntityId id); \
+    template<> Type*      World::getComponent<Type>(EntityId id); \
+    template<> const Type* World::getComponent<Type>(EntityId id) const; \
+    template<> bool       World::hasComponent<Type>(EntityId id) const; \
+    template<> void       World::removeComponent<Type>(EntityId id);
+
+DECL_COMPONENT_SPECIALIZATION(PositionComponent)
+DECL_COMPONENT_SPECIALIZATION(VelocityComponent)
+DECL_COMPONENT_SPECIALIZATION(SpriteComponent)
+DECL_COMPONENT_SPECIALIZATION(RigidBodyComponent)
+DECL_COMPONENT_SPECIALIZATION(ColliderComponent)
+DECL_COMPONENT_SPECIALIZATION(Transform3DComponent)
+DECL_COMPONENT_SPECIALIZATION(MeshRendererComponent)
+DECL_COMPONENT_SPECIALIZATION(LightComponent)
+DECL_COMPONENT_SPECIALIZATION(CameraComponent)
+DECL_COMPONENT_SPECIALIZATION(AudioSourceComponent)
+DECL_COMPONENT_SPECIALIZATION(ScriptComponent)
+DECL_COMPONENT_SPECIALIZATION(TagComponent)
+
+#undef DECL_COMPONENT_SPECIALIZATION
+
 World::World() {
     memset(m_entities, 0, sizeof(m_entities));
     memset(m_systems, 0, sizeof(m_systems));
