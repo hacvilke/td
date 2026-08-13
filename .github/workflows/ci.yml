@@ -8,20 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # required for uploading release artifacts
+  contents: write
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # WebAssembly build - runs on Ubuntu with Emscripten.
-  # Produces web/td-engine.js + web/td-engine.wasm, uploads as a workflow
-  # artifact so users can download and run it in their browser.
-  # ---------------------------------------------------------------------------
   wasm:
     name: Build WebAssembly
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14

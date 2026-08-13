@@ -1,5 +1,6 @@
 #pragma once
 #include "../platform/platform.h"
+#include <cstddef>   // ptrdiff_t (GLintptr, GLsizeiptr)
 #include <cstdint>
 
 // OpenGL type definitions

@@ -9,43 +9,22 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # required for softprops/action-gh-release to upload assets
+  contents: write
 
 jobs:
   build-windows:
     name: Build Native (Windows / MSVC)
     runs-on: windows-latest
-    continue-on-error: true   # never block the artifact upload on a build hiccup
+    continue-on-error: true
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Locate Visual Studio via vswhere (always preinstalled on windows-latest),
-      # then call VsDevCmd.bat from whatever path it returns. Previous versions
-      # hardcoded "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\..."
-      # which silently broke when GitHub rotated the runner image. vswhere is
-      # the documented, supported way to find a VS install and is stable across
-      # image updates (windows-2022 / windows-2025 / BuildTools / etc.).
-      - name: Locate MSVC & configure CMake (Ninja)
+      - name: Configure (CMake / Ninja)
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe not found at $vswhere — runner image is misconfigured"
-          }
-          $vsPath = & $vswhere -latest -property installationPath
-          if (-not $vsPath) {
-            throw "vswhere did not report any Visual Studio install"
-          }
-          Write-Host "Visual Studio install: $vsPath"
+          $vsPath  = & $vswhere -latest -property installationPath
           $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-          if (-not (Test-Path $vsDevCmd)) {
-            throw "VsDevCmd.bat not found at $vsDevCmd"
-          }
-          Write-Host "VsDevCmd: $vsDevCmd"
-
-          # Run vcvars + cmake in cmd, because VsDevCmd.bat is a .bat file
-          # and PowerShell cannot source it directly.
           cmd /c "call `"$vsDevCmd`" -arch=amd64 -host_arch=x64 && cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=bin 2>&1"
 
       - name: Build
@@ -66,9 +45,6 @@ jobs:
           $vsDevCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
           cmd /c "call `"$vsDevCmd`" -arch=amd64 -host_arch=x64 && (build\bin\test_math.exe || ver>nul) && (build\bin\test_ecs.exe || ver>nul) && (build\bin\test_physics.exe || ver>nul) 2>&1"
 
-      # Always stage + upload whatever binaries got built, even if the
-      # build step partially failed (e.g. one example didn't compile).
-      # People should be able to download the editor/games from CI.
       - name: Stage release artifacts
         if: always()
         shell: pwsh
@@ -81,34 +57,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$stage/editor"
           New-Item -ItemType Directory -Force -Path "$stage/tests"
 
-          # Binaries (.exe + .lib) — Ninja puts them in build/bin/
-          # Use -ErrorAction SilentlyContinue so missing files don't fail the step.
           Copy-Item -Path "build/bin/*.exe" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
           Copy-Item -Path "build/bin/*.lib" -Destination "$stage/bin/" -ErrorAction SilentlyContinue
           Copy-Item -Path "build/*.lib"    -Destination "$stage/bin/" -ErrorAction SilentlyContinue
 
-          # List what we got, for visibility in the CI log
           Write-Host "--- Binaries staged ---"
           Get-ChildItem "$stage/bin" -ErrorAction SilentlyContinue | Format-Table Name, Length
 
-          # Assets (shaders) so the games/editor can find them at runtime
           Copy-Item -Path "assets/*" -Destination "$stage/assets/" -Recurse -ErrorAction SilentlyContinue
-
-          # Source headers so users can #include the engine
           Copy-Item -Path "src/*" -Destination "$stage/src/" -Recurse -ErrorAction SilentlyContinue
-
-          # Examples + editor + tests source
           Copy-Item -Path "examples/*" -Destination "$stage/examples/" -Recurse -ErrorAction SilentlyContinue
           Copy-Item -Path "editor/*"   -Destination "$stage/editor/"   -Recurse -ErrorAction SilentlyContinue
           Copy-Item -Path "tests/*"    -Destination "$stage/tests/"    -Recurse -ErrorAction SilentlyContinue
 
-          # Docs
           Copy-Item -Path "README.md"      -Destination "$stage/" -ErrorAction SilentlyContinue
           Copy-Item -Path "LICENSE"        -Destination "$stage/" -ErrorAction SilentlyContinue
           Copy-Item -Path "Makefile"       -Destination "$stage/" -ErrorAction SilentlyContinue
           Copy-Item -Path "CMakeLists.txt" -Destination "$stage/" -ErrorAction SilentlyContinue
 
-          # Write a README inside the zip explaining what's inside
           @"
           TD Engine -- Windows x64 Build
           ==============================
@@ -129,19 +95,10 @@ jobs:
             bin\pong.exe
             bin\platformer.exe
             bin\td-editor.exe
-
-          Note: td-editor.exe is a minimal Win32 + OpenGL editor scaffold.
-          The panels (scene, inspector, asset browser, console) are stubs
-          that compile and run but don't yet have full functionality.
-
-          Full source: https://github.com/hacvilke/td
-          Licensed under the MIT License -- see LICENSE.
           "@ | Out-File -FilePath "$stage/USAGE.txt" -Encoding utf8
 
-          # Zip
           Compress-Archive -Path "$stage" -DestinationPath "td-engine-windows-x64.zip" -Force
 
-          # Verify the zip has content
           $size = (Get-Item "td-engine-windows-x64.zip").Length
           Write-Host "Zip size: $size bytes"
           if ($size -lt 1000) {

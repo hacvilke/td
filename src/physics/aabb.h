@@ -1,5 +1,6 @@
 #pragma once
 #include "../core/math/vec2.h"
+#include "../core/math/vec3.h"   // Vec3 (used by AABB3D::center/size)
 
 namespace td {
 
