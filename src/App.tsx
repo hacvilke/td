@@ -5,27 +5,27 @@ const DocsPage = lazy(() => import('./DocsPage'));
 const features = [
   {
     title: 'ECS Core',
-    desc: 'Bit-mask queries over a packed entity store. Same layout as the C++ engine — Position, Velocity, Sprite, Collider, RigidBody, Tag.',
+    desc: 'Bit-mask queries over a packed entity store. Position, Velocity, Sprite, Collider, RigidBody, Tag — defined in src/ecs/, ported to TS in web/engine/ecs.ts.',
   },
   {
-    title: 'WebGL2 Renderer',
-    desc: 'SpriteBatch with rotation, tint, alpha, batched draw calls. Same GLSL shaders as the native engine, ported to GLSL ES 3.00.',
+    title: 'OpenGL 3.3 + WebGL2',
+    desc: 'Native renderer uses GLSL 330 core (assets/shaders/). Browser port uses the same shaders ported to GLSL ES 3.00. SpriteBatch with rotation, tint, alpha, batched draw calls.',
   },
   {
     title: 'AABB Physics',
-    desc: 'Box-vs-box collision detection with paddle spin, wall reflection, speed clamping. Mirrors src/physics/aabb.h.',
+    desc: 'Box-vs-box collision in src/physics/aabb.{h,cpp}. Paddle spin, wall reflection, speed clamping in the Pong example.',
+  },
+  {
+    title: 'Audio · Net · Assets',
+    desc: 'Native-only: waveOut mixer (src/audio/), Winsock2 client/server (src/net/), PNG + OBJ + WAV loaders (src/assets/). Not ported to the browser.',
+  },
+  {
+    title: 'TD Scripting Language',
+    desc: 'A small embedded language with lexer, parser, AST, and VM (src/td/). Used for game logic at runtime in native builds.',
   },
   {
     title: 'Fixed-Step Loop',
-    desc: '60Hz simulation with interpolation. Accumulator pattern matches td::GameLoop — deterministic, frame-rate independent.',
-  },
-  {
-    title: 'Native C++ Build',
-    desc: 'The original Win32 / OpenGL 3.3 / Winsock codebase is preserved in src/ and builds on Windows via CMake + MSVC.',
-  },
-  {
-    title: 'MIT Licensed',
-    desc: 'Permissive license. Read the source, learn from it, ship a game. No attribution strings attached.',
+    desc: '60Hz simulation with accumulator pattern (src/core/game_loop.{h,cpp}). Deterministic, frame-rate independent. Ported 1:1 to TS.',
   },
 ];
 
@@ -95,11 +95,14 @@ function App() {
             Open-source · MIT · C++ + TypeScript
           </p>
           <h1 className="text-5xl md:text-6xl font-semibold tracking-tight text-neutral-900 max-w-3xl leading-[1.05]">
-            A small game engine, written from scratch in C++ and ported to run in your browser.
+            A 2D game engine written from scratch in C++, with a browser port for the web.
           </h1>
           <p className="mt-6 text-lg text-neutral-600 max-w-2xl leading-relaxed">
-            TD Engine is a learning-oriented 2D game engine: ECS, SpriteBatch, AABB physics, fixed-step loop.
-            The native build targets Windows with OpenGL 3.3; the TypeScript port runs in any WebGL2 browser.
+            TD Engine is a from-scratch game engine in <code className="font-mono text-[14px] bg-neutral-200 px-1 py-0.5 rounded">src/</code> —
+            Win32 + OpenGL 3.3 + Winsock + waveOut, ECS, SpriteBatch, AABB physics, audio mixer, networking,
+            asset pipeline, and the TD scripting language (lexer, parser, VM). A small TypeScript port in
+            <code className="font-mono text-[14px] bg-neutral-200 px-1 py-0.5 rounded mx-1">web/engine/</code>
+            lets games run in any WebGL2 browser.
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-3">
             <button
@@ -155,8 +158,10 @@ function App() {
                 was a silent no-op. The browser canvas stayed blank.
               </p>
               <p className="mt-3">
-                We replaced the stub with a real TypeScript port of the engine under <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded">web/engine/</code>.
-                The C++ source in <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded">src/</code> is preserved for native builds.
+                We replaced the stub with a real TypeScript port of the engine under <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded">web/engine/</code> —
+                a small subset of the engine in <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded">src/</code> (ECS, SpriteBatch, Camera2D, Input, Math),
+                enough to run Pong in the browser. The full engine — audio, networking, asset pipeline, TD scripting VM — lives in
+                <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded mx-1">src/</code> and builds natively on Windows.
               </p>
             </div>
           </div>
@@ -181,23 +186,26 @@ function App() {
         </div>
       </section>
 
-      {/* Architecture — two columns, monospace diagrams */}
+      {/* Architecture — src/ is the engine, web/engine/ is a browser port of part of it */}
       <section className="border-b border-neutral-200 bg-neutral-50">
         <div className="max-w-6xl mx-auto px-6 py-20">
           <div className="mb-12">
             <p className="text-[11px] font-mono uppercase tracking-wider text-neutral-500">Architecture</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-900">Two builds, one API</h2>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-neutral-900">The engine, and a browser port</h2>
             <p className="mt-3 text-sm text-neutral-600 max-w-2xl">
-              The C++ engine targets Windows natively (Win32, OpenGL 3.3, Winsock, waveOut).
-              The TypeScript port targets the browser (WebGL2, DOM, Web Audio).
-              Both expose the same ECS / SpriteBatch / Camera2D / Input surface.
+              The engine itself lives in <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded">src/</code> —
+              C++17, Win32 + OpenGL 3.3 + Winsock + waveOut, with an ECS, SpriteBatch, AABB physics, audio mixer,
+              networking, asset pipeline, and the TD scripting language (lexer, parser, VM).
+              <code className="font-mono text-[12px] bg-neutral-200 px-1 py-0.5 rounded ml-1">web/engine/</code> is a
+              small TypeScript port of the parts needed to run games in a browser — ECS, SpriteBatch, Camera2D, Input, Math.
+              It is a subset, not a parallel codebase.
             </p>
           </div>
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
               <div className="px-5 py-3 border-b border-neutral-200 flex items-center justify-between">
-                <span className="text-sm font-semibold text-neutral-900">Native (C++)</span>
-                <span className="text-[11px] font-mono text-neutral-500">src/</span>
+                <span className="text-sm font-semibold text-neutral-900">The engine</span>
+                <span className="text-[11px] font-mono text-neutral-500">src/ · C++17</span>
               </div>
               <pre className="px-5 py-5 font-mono text-[11px] text-neutral-700 leading-relaxed overflow-x-auto">
 {`┌─────────────────────────────────┐
@@ -207,32 +215,48 @@ function App() {
 ├─────┬─────┬─────┬─────┬────────┤
 │Rendr│Phys │Audio│ Net │ Assets │
 ├─────┴─────┴─────┴─────┴────────┤
-│   Core (Math, Memory, Logger)   │
+│  Core (Math, Memory, Logger)    │
+│  + TD scripting (lex/parse/VM)  │
 ├─────────────────────────────────┤
-│     Platform (Win32, OpenGL)    │
+│  Platform (Win32, OpenGL 3.3,   │
+│   Winsock, waveOut)             │
 └─────────────────────────────────┘`}
               </pre>
+              <div className="px-5 py-3 border-t border-neutral-200 text-[11px] font-mono text-neutral-500">
+                ~80 files · the full engine
+              </div>
             </div>
             <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
               <div className="px-5 py-3 border-b border-neutral-200 flex items-center justify-between">
-                <span className="text-sm font-semibold text-neutral-900">Browser (TS port)</span>
-                <span className="text-[11px] font-mono text-neutral-500">web/engine/</span>
+                <span className="text-sm font-semibold text-neutral-900">Browser port (subset)</span>
+                <span className="text-[11px] font-mono text-neutral-500">web/engine/ · TS</span>
               </div>
               <pre className="px-5 py-5 font-mono text-[11px] text-neutral-700 leading-relaxed overflow-x-auto">
 {`┌─────────────────────────────────┐
 │       Pong:Rush (game code)     │
 ├─────────────────────────────────┤
-│       Engine (TS port)          │
+│   Engine (TS port — subset)     │
 ├─────┬─────┬─────┬───────────────┤
-│ ECS │Rendr│Input│ Particles/AI  │
+│ ECS │Rendr│Input│ Camera2D/Math │
 ├─────┴─────┴─────┴───────────────┤
-│  Math (Vec2/3, Mat4, Color)     │
+│  (no audio · no net · no 3D ·   │
+│   no scripting VM · no assets)  │
 ├─────────────────────────────────┤
 │   Platform (WebGL2, DOM)        │
 └─────────────────────────────────┘`}
               </pre>
+              <div className="px-5 py-3 border-t border-neutral-200 text-[11px] font-mono text-neutral-500">
+                6 files · enough to run Pong in the browser
+              </div>
             </div>
           </div>
+          <p className="mt-6 text-xs text-neutral-500 max-w-2xl leading-relaxed">
+            The browser port exists so the engine can be demoed without a Windows machine.
+            To build a real browser game on top of the full engine surface, the rest of
+            <code className="font-mono text-[11px] bg-neutral-200 px-1 py-0.5 rounded mx-1">src/</code>
+            would need to be ported too — audio (Web Audio), networking (WebSockets/WebRTC),
+            asset pipeline (fetch + Image), and the TD scripting VM.
+          </p>
         </div>
       </section>
 

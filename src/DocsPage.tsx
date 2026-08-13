@@ -195,54 +195,6 @@ cmake --build build --parallel
 # Or Visual Studio generator
 cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release`}</Code>
-
-      <H3>Scope & limitations — what can this engine actually do?</H3>
-      <P>
-        This is a fair question, especially if you're coming from "can I build Minecraft or Roblox in this?".
-        The honest answer: <span className="text-white font-semibold">no, not as-is</span>. Here's the precise breakdown.
-      </P>
-
-      <div className="grid md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Pill color="emerald">Can do</Pill>
-          </div>
-          <ul className="text-sm text-slate-300 space-y-2 list-disc list-inside leading-relaxed">
-            <li>2D sprite-based games (Pong, breakout, top-down shooters, simple platformers)</li>
-            <li>ECS-driven gameplay with hundreds of entities at 60fps</li>
-            <li>AABB box-vs-box collision (no rotation, no physics solver like Box2D)</li>
-            <li>Particle effects, screen shake, camera follow</li>
-            <li>Fixed-step deterministic simulation</li>
-            <li>Native Windows builds with OpenGL 3.3 + Winsock networking</li>
-            <li>Browser builds with WebGL2 (no audio in the TS port yet)</li>
-          </ul>
-        </div>
-        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Pill color="amber">Cannot do (without major work)</Pill>
-          </div>
-          <ul className="text-sm text-slate-300 space-y-2 list-disc list-inside leading-relaxed">
-            <li><span className="text-white font-semibold">Minecraft-style voxel worlds</span> — would need chunked voxel storage, greedy meshing, and a 3D mesh renderer (the engine has basic 3D shaders but no Mesh/SceneGraph pipeline in the TS port)</li>
-            <li><span className="text-white font-semibold">Roblox-style 3D multiplayer</span> — would need a 3D scene graph, skinned mesh animation, UDP reliable transport, server authority, and a scripting sandbox</li>
-            <li>Rotated physics / rigidbody simulation (only AABB)</li>
-            <li>3D audio / spatialization</li>
-            <li>Asset pipeline for FBX/glTF models (engine only loads OBJ + PNG)</li>
-            <li>Mobile / console targets</li>
-          </ul>
-        </div>
-      </div>
-
-      <P>
-        <span className="text-white font-semibold">What it's good for:</span> learning how game engines are built
-        (ECS, renderers, game loops), prototyping 2D gameplay, and as a starting point you can extend.
-        The C++ engine is roughly comparable to a minimal Raylib + a homemade ECS — not Unity, not Godot, not even LÖVE 2D in scope.
-      </P>
-      <P>
-        <span className="text-white font-semibold">If you want to build "Minecraft in the browser"</span> today,
-        the realistic path is: three.js or Babylon.js for rendering + a voxel library like Noah's BABYLON-Chunks,
-        or start from a dedicated voxel engine. TD Engine's ECS and game loop are solid, but its renderer is
-        2D-sprite-only in TypeScript and the 3D pipeline in C++ is unfinished.
-      </P>
     </div>
   );
 }
