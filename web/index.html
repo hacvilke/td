@@ -3,17 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser.">
+    <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser. Play VOID RUNNER, Pong, or the Beat Demo rhythm game.">
     <meta name="theme-color" content="#0a0e14">
     <!-- Cache-bust: tell browser not to cache the page itself, so users always
-         get the latest version (previous Pong:Rush builds were sticking in cache). -->
+         get the latest version. -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=3">
+    <style>
+        /* ---- Game selector bar ---- */
+        #game-selector {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 12px;
+            background: linear-gradient(180deg, #0a0e14 0%, #11161e 100%);
+            border-bottom: 1px solid #1f2937;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            color: #cbd5e1;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        #game-selector .brand {
+            display: flex; align-items: center; gap: 6px;
+            margin-right: 12px;
+            font-weight: 700; color: #67e8f9;
+            letter-spacing: 0.5px;
+        }
+        #game-selector .brand .mark {
+            display: inline-block; padding: 2px 6px;
+            background: #67e8f9; color: #0a0e14;
+            font-size: 11px; font-weight: 800;
+            border-radius: 3px;
+        }
+        #game-selector .picker { display: flex; gap: 4px; flex-wrap: wrap; }
+        #game-selector .picker button {
+            background: transparent;
+            border: 1px solid #1f2937;
+            color: #94a3b8;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        #game-selector .picker button:hover {
+            background: #1f2937;
+            color: #e2e8f0;
+            border-color: #334155;
+        }
+        #game-selector .picker button.active {
+            background: #67e8f9;
+            color: #0a0e14;
+            border-color: #67e8f9;
+            font-weight: 700;
+        }
+        #game-selector .meta {
+            margin-left: auto;
+            font-size: 11px;
+            color: #64748b;
+        }
+        #game-selector .meta a {
+            color: #67e8f9;
+            text-decoration: none;
+        }
+        #game-selector .meta a:hover { text-decoration: underline; }
+
+        /* Push the rest of the page down below the fixed bar */
+        body { padding-top: 44px; }
+    </style>
 </head>
 <body>
+
+    <!-- ====================================================================== -->
+    <!-- Game selector bar                                                       -->
+    <!-- ====================================================================== -->
+    <div id="game-selector">
+        <div class="brand">
+            <span class="mark">TD</span>
+            <span>ENGINE</span>
+        </div>
+        <div class="picker" id="game-picker">
+            <!-- Populated by JS below. -->
+        </div>
+        <div class="meta">
+            <a href="https://github.com/hacvilke/td/releases/tag/latest" target="_blank" rel="noopener">Download Windows .exe</a>
+            &nbsp;|&nbsp;
+            <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">Source</a>
+        </div>
+    </div>
 
     <!-- ====================================================================== -->
     <!-- Loading Screen                                                          -->
@@ -42,47 +121,20 @@
     <div id="fps-counter" style="display: none;">FPS: 0</div>
 
     <!-- ====================================================================== -->
-    <!-- Controls Overlay - shown before the game starts                         -->
+    <!-- Controls Overlay - shown before the game starts.                        -->
+    <!-- Content is data-driven: see GAME_METADATA below.                        -->
     <!-- ====================================================================== -->
     <div id="controls-overlay" style="display: none;">
         <div class="controls-card">
-            <h1 class="controls-title">VOID RUNNER</h1>
-            <p class="controls-subtitle">A space shooter on TD Engine</p>
+            <h1 class="controls-title" id="game-title">VOID RUNNER</h1>
+            <p class="controls-subtitle" id="game-subtitle">A space shooter on TD Engine</p>
 
-            <div class="controls-grid">
-                <div class="control-row">
-                    <span class="key">A / D &nbsp; &larr; &rarr;</span>
-                    <span class="action">Move left / right</span>
-                </div>
-                <div class="control-row">
-                    <span class="key">W / S &nbsp; &uarr; &darr;</span>
-                    <span class="action">Move up / down</span>
-                </div>
-                <div class="control-row">
-                    <span class="key">Space</span>
-                    <span class="action">Shoot (hold)</span>
-                </div>
-                <div class="control-row">
-                    <span class="key">P</span>
-                    <span class="action">Pause</span>
-                </div>
-                <div class="control-row">
-                    <span class="key">R</span>
-                    <span class="action">Restart (after game over)</span>
-                </div>
-                <div class="control-row">
-                    <span class="key">Esc</span>
-                    <span class="action">Engine pause overlay</span>
-                </div>
+            <div class="controls-grid" id="controls-grid">
+                <!-- Populated by JS. -->
             </div>
 
-            <div class="controls-tip">
-                <p><span style="color:#ff6b6b">●</span> Drones &middot;
-                   <span style="color:#ffa64d">●</span> Hunters track you &middot;
-                   <span style="color:#b380ff">●</span> Tanks shoot back</p>
-                <p>Grab powerups: <span style="color:#ffd24a">RAPID</span> &middot;
-                   <span style="color:#66ff80">TRIPLE</span> &middot;
-                   <span style="color:#66b3ff">SHIELD</span></p>
+            <div class="controls-tip" id="controls-tip">
+                <!-- Populated by JS. -->
             </div>
 
             <button id="start-button" class="start-button">Start</button>
@@ -117,13 +169,139 @@
     <!-- ====================================================================== -->
 
     <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
-    <script src="td-engine.js?v=2"></script>
+    <script src="td-engine.js?v=3"></script>
 
     <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
-    <script src="js_bridge.js?v=2"></script>
+    <script src="js_bridge.js?v=3"></script>
 
-    <!-- Sample game - VOID RUNNER, a space shooter that runs on the engine via WASM. -->
-    <script src="examples/voidrunner.js?v=2"></script>
+    <!-- Sample game script is injected at runtime based on ?game= query param. -->
+
+    <script>
+        // =====================================================================
+        // Game metadata — drives both the picker bar and the controls overlay.
+        // To add a fourth demo, just add an entry here and ship its .js file
+        // under web/examples/.
+        // =====================================================================
+        const GAME_METADATA = {
+            'voidrunner': {
+                label: 'VOID RUNNER',
+                title: 'VOID RUNNER',
+                subtitle: 'A space shooter on TD Engine',
+                script: 'examples/voidrunner.js?v=3',
+                controls: [
+                    { key: 'A / D  ← →',   action: 'Move left / right' },
+                    { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
+                    { key: 'Space',        action: 'Shoot (hold)' },
+                    { key: 'P',            action: 'Pause' },
+                    { key: 'R',            action: 'Restart (after game over)' },
+                    { key: 'Esc',          action: 'Engine pause overlay' },
+                ],
+                tip: '<p><span style="color:#ff6b6b">●</span> Drones &middot; ' +
+                     '<span style="color:#ffa64d">●</span> Hunters track you &middot; ' +
+                     '<span style="color:#b380ff">●</span> Tanks shoot back</p>' +
+                     '<p>Grab powerups: <span style="color:#ffd24a">RAPID</span> &middot; ' +
+                     '<span style="color:#66ff80">TRIPLE</span> &middot; ' +
+                     '<span style="color:#66b3ff">SHIELD</span></p>',
+            },
+            'pong': {
+                label: 'PONG',
+                title: 'PONG',
+                subtitle: 'Classic 2-player paddle game',
+                script: 'examples/pong.js?v=3',
+                controls: [
+                    { key: 'W / S',          action: 'Left paddle (player)' },
+                    { key: '↑ / ↓',          action: 'Right paddle (AI)' },
+                    { key: 'Space',          action: 'Pause / resume' },
+                    { key: 'Esc',            action: 'Show pause overlay' },
+                ],
+                tip: '<p>First to 7 points wins. The right paddle plays itself.</p>',
+            },
+            'beat': {
+                label: 'BEAT DEMO',
+                title: 'BEAT DEMO',
+                subtitle: 'Rhythm game — tap on the beat to score',
+                script: 'examples/beat_demo.js?v=3',
+                controls: [
+                    { key: 'Space', action: 'Hit (catch the falling note)' },
+                    { key: 'R',     action: 'Restart after game over' },
+                    { key: 'Esc',   action: 'Engine pause overlay' },
+                ],
+                tip: '<p>Notes fall on every beat at 100 BPM. Tap <b>Space</b> when a note ' +
+                     'crosses the hit line.</p>' +
+                     '<p>Hitting on-beat builds combo (bonus = 100 + combo × 10). ' +
+                     'Missing or hitting off-beat resets your combo.</p>',
+            },
+        };
+
+        // =====================================================================
+        // Pick which game to load.
+        // =====================================================================
+        function getGameKey() {
+            const params = new URLSearchParams(window.location.search);
+            const g = params.get('game');
+            if (g && GAME_METADATA[g]) return g;
+            // Default to voidrunner.
+            return 'voidrunner';
+        }
+
+        const ACTIVE_GAME = getGameKey();
+        const META = GAME_METADATA[ACTIVE_GAME];
+
+        // =====================================================================
+        // Populate the picker bar.
+        // =====================================================================
+        (function populatePicker() {
+            const picker = document.getElementById('game-picker');
+            Object.keys(GAME_METADATA).forEach(function (key) {
+                const btn = document.createElement('button');
+                btn.textContent = GAME_METADATA[key].label;
+                btn.dataset.game = key;
+                if (key === ACTIVE_GAME) btn.classList.add('active');
+                btn.addEventListener('click', function () {
+                    if (key === ACTIVE_GAME) return;
+                    // Navigate to ?game=key. Using location.search keeps it on
+                    // the same path — no full reload of the host page.
+                    window.location.search = '?game=' + encodeURIComponent(key);
+                });
+                picker.appendChild(btn);
+            });
+        })();
+
+        // =====================================================================
+        // Populate the controls overlay with the active game's metadata.
+        // =====================================================================
+        (function populateControls() {
+            document.title = META.title + ' — TD Engine';
+            document.getElementById('game-title').textContent = META.title;
+            document.getElementById('game-subtitle').textContent = META.subtitle;
+            const grid = document.getElementById('controls-grid');
+            grid.innerHTML = '';
+            META.controls.forEach(function (row) {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'control-row';
+                const keySpan = document.createElement('span');
+                keySpan.className = 'key';
+                keySpan.innerHTML = row.key;
+                const actSpan = document.createElement('span');
+                actSpan.className = 'action';
+                actSpan.textContent = row.action;
+                rowDiv.appendChild(keySpan);
+                rowDiv.appendChild(actSpan);
+                grid.appendChild(rowDiv);
+            });
+            document.getElementById('controls-tip').innerHTML = META.tip;
+        })();
+
+        // =====================================================================
+        // Inject the demo script.
+        // =====================================================================
+        (function injectDemoScript() {
+            const s = document.createElement('script');
+            s.src = META.script;
+            s.async = false;  // preserve ordering relative to the inline boot script
+            document.head.appendChild(s);
+        })();
+    </script>
 
     <script>
         (async function () {
@@ -217,7 +395,7 @@
                 fpsCounter.style.display = 'block';
                 TDBridge.resumeAudio();
 
-                // Launch the sample game (defined in examples/voidrunner.js).
+                // Launch the active demo (defined in the injected script).
                 if (typeof window.startTDExample === 'function') {
                     window.startTDExample();
                 }

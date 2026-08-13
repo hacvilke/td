@@ -7,8 +7,17 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+# Required by actions/deploy-pages for the deploy job.
+# contents: write is kept for any future release-asset uploads.
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time — older runs get cancelled.
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   wasm:
@@ -38,7 +47,22 @@ jobs:
       - name: Stage JS bridge into web/
         run: cp wasm/js_bridge.js web/js_bridge.js
 
-      - name: Upload WASM bundle
+      - name: Stage developer guide into web/ (if not already in web/)
+        run: |
+          # web/GETTING_STARTED.md is committed at this path; this step is a
+          # safety net in case it ever moves back to wasm/ or docs/.
+          test -f web/GETTING_STARTED.md || cp wasm/GETTING_STARTED.md web/GETTING_STARTED.md 2>/dev/null || true
+          test -f web/GETTING_STARTED.md || cp docs/RHYTHM_MECHANICS.md web/RHYTHM_MECHANICS.md 2>/dev/null || true
+          ls -la web/GETTING_STARTED.md 2>&1 || echo "GETTING_STARTED.md not found (non-fatal)"
+
+      - name: List final web/ contents (sanity check before artifact upload)
+        run: |
+          echo "=== web/ contents ==="
+          find web -maxdepth 2 -type f | sort
+          echo "=== sizes ==="
+          du -b web/index.html web/style.css web/js_bridge.js web/td-engine.js web/td-engine.wasm 2>/dev/null
+
+      - name: Upload WASM bundle (build artifact)
         uses: actions/upload-artifact@v4
         with:
           name: td-engine-wasm
@@ -51,11 +75,27 @@ jobs:
             web/examples/
           if-no-files-found: error
 
-      - name: Deploy web player to GitHub Pages
+      # Upload a SINGLE Pages artifact — this is what actions/deploy-pages
+      # pushes to the GitHub Pages CDN. MUST be named 'github-pages'.
+      - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: web
-          publish_branch: gh-pages
-          force_orphan: true
+          name: github-pages
+          path: web
+
+  # Separate deploy job — required by actions/deploy-pages.
+  # It must run in the 'github-pages' environment so GitHub trusts it
+  # to push to the Pages CDN.
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main'
+    needs: wasm
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
