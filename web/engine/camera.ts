@@ -55,19 +55,24 @@ export class Camera2D {
     if (!this.dirty) return;
     this.dirty = false;
 
-    const halfW = this.viewportWidth / 2;
-    const halfH = this.viewportHeight / 2;
+    // Top-left origin: world (0,0) maps to screen top-left, world
+    // (viewportW, viewportH) maps to screen bottom-right. This matches
+    // how the game code thinks about coordinates (e.g. pong.ts places
+    // paddles at x=40 and x=WIDTH-40, walls at y=WALL_H/2 etc.).
+    const w = this.viewportWidth / this.zoom;
+    const h = this.viewportHeight / this.zoom;
 
     this._projection = Mat4.orthographic(
-      -halfW / this.zoom,
-      halfW / this.zoom,
-      halfH / this.zoom,
-      -halfH / this.zoom,
+      0,        // left
+      w,        // right
+      h,        // bottom  (Y axis points DOWN in screen space)
+      0,        // top
       -1,
       1,
     );
 
-    // Build view = translate(-pos) * rotate(-rot)
+    // View = translate(-pos) * rotate(-rot). With pos=(0,0) the view
+    // is identity, which is what most 2D games want.
     const t = Mat4.translate(-this.x, -this.y);
     const r = Mat4.rotateZ(-this.rotation);
     this._view = t.multiply(r);
