@@ -437,6 +437,9 @@
     <!-- Persistence: save/load game state to localStorage with named slots
          + autosave. Games register serializers via TDPersistence.registerSerializer(). -->
     <script src="persistence.js?v=22"></script>
+    <!-- Peer-to-peer transport: BroadcastChannel-backed real multiplayer
+         for the web. No server required — open 2+ tabs to play together. -->
+    <script src="net_peer.js?v=22"></script>
 
     <!-- Sample game script is injected at runtime based on ?game= query param. -->
 
@@ -537,6 +540,29 @@
                      'echo server; HUD shows live RTT.</p>' +
                      '<p><span style="color:#fbbf24">●</span> <b>Server URL Router (v=18)</b> — HUD shows where the engine assets ' +
                      'are loaded from (this site or your own server if ?server= was set).</p>',
+            },
+            'net2': {
+                label: 'NET ARENA 2',
+                title: 'NET ARENA 2',
+                subtitle: 'Real P2P multiplayer — open 2+ tabs and play together',
+                script: 'examples/net_arena_2.js?v=22',
+                controls: [
+                    { key: 'WASD / Arrows', action: 'Move' },
+                    { key: 'Mouse',         action: 'Aim' },
+                    { key: 'Left Click',    action: 'Shoot (hold for auto-fire)' },
+                    { key: 'P',             action: 'Pause / resume' },
+                    { key: 'R',             action: 'Restart (rejoins peer channel)' },
+                    { key: 'Esc',           action: 'Engine pause overlay' },
+                ],
+                tip: '<p><b>Real multiplayer, no server required.</b></p>' +
+                     '<p><span style="color:#67e8f9">●</span> Open this page in <b>another browser tab</b> (or window) — ' +
+                     'each tab joins the same peer channel via <code>TDNet.Peer</code> (BroadcastChannel-backed).</p>' +
+                     '<p><span style="color:#4ade80">●</span> Player state (position, aim, color) is broadcast at <b>20 Hz</b>. ' +
+                     'Bullets are event-driven (spawn/hit/despawn messages). RTT is measured continuously.</p>' +
+                     '<p><span style="color:#fbbf24">●</span> The HUD shows live peer count + RTT. Same-browser latency is ' +
+                     'sub-millisecond — that\'s the engine\'s networking layer at full speed.</p>' +
+                     '<p><span style="color:#c084fc">●</span> Want internet multiplayer? Swap <code>TDNet.Peer</code> for ' +
+                     '<code>TDNet.Socket</code> — same API shape, WebSocket transport.</p>',
             },
         };
 

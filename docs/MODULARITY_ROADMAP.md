@@ -61,7 +61,8 @@ implementation code + ~3,400 lines of tests across 9 new modules.
 | Web network module (Socket + RPC + ServerConfig) | tests/test_net_websocket.js | 28 | 28/28 (100%) |
 | Web editor modules (Inspector + Profiler + ErrorBoundary) | tests/test_editor_modules.js | 78 | 78/78 (100%) |
 | Web persistence module (Save/Load/Autosave) | tests/test_persistence.js | 80 | 80/80 (100%) |
-| **Totals** | | **614** | **609/614 (99.2%)** |
+| Web peer transport (BroadcastChannel multiplayer) | tests/test_net_peer.js | 41 | 41/41 (100%) |
+| **Totals** | | **655** | **650/655 (99.2%)** |
 
 The 5 failing tests are: 3 in net's 256KB fragmentation stress test
 (an edge case in fragment reassembly), 1 in shader graph link dedup (a
@@ -167,6 +168,56 @@ or sharing save files between players).
 80 new tests in `tests/test_persistence.js` (100% pass rate, runs in Node
 via vm sandbox with fake localStorage). Test totals after Wave 4b:
 **614 tests, 609 passing (99.2%)**.
+
+### Wave 4c — P2P multiplayer (v=22, BroadcastChannel transport + NET ARENA 2 demo)
+
+Wave 4c ships real multiplayer for the web — no server required. The new
+`web/net_peer.js` (TDNet.Peer) module uses the browser's BroadcastChannel
+API to broadcast typed messages between tabs/windows on the same origin.
+Every tab is a peer; the channel is the transport.
+
+Why this exists alongside TDNet.Socket:
+- TDNet.Socket connects to a WebSocket server (requires hosting).
+- TDNet.Peer connects tabs on the same browser (zero setup).
+- Both expose the same API shape (send / sendTo / onMessage / onPeerJoin /
+  onPeerLeave) so game code is transport-agnostic. Swap TDNet.Peer for
+  TDNet.Socket when you outgrow single-browser play.
+
+API:
+```
+TDNet.Peer.isSupported()                              → bool
+TDNet.Peer.join(channelName, opts?)                   → Peer instance
+  opts.peerId / onJoin / onLeave / onMessage / onState
+peer.send(data)                                       → bool (true if peers exist)
+peer.sendTo(peerId, data)                             → bool (true if peer known)
+peer.peers()                                          → [peerId, ...]
+peer.rtt()                                            → ms (slowest peer)
+peer.on(event, cb)                                    → self  (join/leave/message/state)
+peer.leave()                                          → void
+```
+
+Wire format (JSON over BroadcastChannel):
+- `{ t: "hello", id }` — announcement on join
+- `{ t: "helloAck", id, to }` — directed reply so both sides discover each other
+- `{ t: "bye", id }` — leaving
+- `{ t: "ping", id, ts }` / `{ t: "pong", id, ts }` — RTT probe (1 Hz)
+- `{ t: "data", id, to, d }` — payload (to="*" for broadcast, to=peerId for directed)
+
+Stale peers (no message in 5s) are swept automatically. RTT is measured
+continuously and reported as the slowest peer's RTT — that's the effective
+latency for broadcast messaging.
+
+NET ARENA 2 demo (`web/examples/net_arena_2.js`):
+- 2D top-down arena shooter. Open the page in 2+ tabs — each tab is a player.
+- Player state (position, aim angle, color) broadcast at 20 Hz.
+- Bullets are event-driven (spawn/hit/despawn messages, not synced every frame).
+- HUD shows live peer count + RTT. Same-browser latency is sub-millisecond.
+- Each player gets a deterministic color from their peerId hash.
+- Score + deaths tracked per-tab. Hits register via directed `hit` messages.
+
+41 new tests in `tests/test_net_peer.js` (100% pass rate, runs in Node via
+vm sandbox with a fake BroadcastChannel that simulates cross-tab delivery).
+Test totals after Wave 4c: **655 tests, 650 passing (99.2%)**.
 
 Also shipped alongside the gauntlets:
 - **Component slot leak fix** — `World::removeComponent<T>()` now does a
