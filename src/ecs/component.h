@@ -1,6 +1,7 @@
 #pragma once
 #include "../core/math/vec2.h"
 #include "../core/math/vec3.h"
+#include "entity.h"
 #include "../renderer/texture.h"
 #include <cstdint>
 
