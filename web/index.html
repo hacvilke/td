@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser. Play VOID RUNNER, Pong, or the Beat Demo rhythm game.">
     <meta name="theme-color" content="#0a0e14">
+    <!-- SVG favicon: same boat logo as the top bar, scalable, no .ico needed. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
     <!-- Cache-bust: tell browser not to cache the page itself, so users always
          get the latest version. -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
     <style>
         /* ---- Game selector bar ---- */
         #game-selector {
@@ -31,11 +33,18 @@
             letter-spacing: 0.5px;
         }
         #game-selector .brand .mark {
-            display: inline-block; padding: 2px 6px;
-            background: #67e8f9; color: #0a0e14;
-            font-size: 11px; font-weight: 800;
-            border-radius: 3px;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 22px; height: 22px;
+            color: #67e8f9;
+            filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.5));
         }
+        #game-selector .brand .mark svg { width: 100%; height: 100%; }
+        /* Gentle boat rocking animation - 4s cycle, ±4° */
+        @keyframes td-boat-rock {
+            0%, 100% { transform: rotate(-3deg); }
+            50%      { transform: rotate(3deg); }
+        }
+        #game-selector .brand .mark svg { animation: td-boat-rock 4s ease-in-out infinite; transform-origin: 50% 75%; }
         #game-selector .picker { display: flex; gap: 4px; flex-wrap: wrap; }
         #game-selector .picker button {
             background: transparent;
@@ -81,7 +90,32 @@
     <!-- ====================================================================== -->
     <div id="game-selector">
         <div class="brand">
-            <span class="mark">TD</span>
+            <span class="mark" aria-label="TD Engine logo">
+                <!--
+                  TD boat logo: T upright as the sail/mast, D rotated 90°
+                  counter-clockwise (flat side down, curved side up) so it
+                  reads as a boat hull. The whole mark rocks gently via the
+                  td-boat-rock keyframe animation defined in <style> above.
+                -->
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                    <!-- T (sail): horizontal top bar + vertical mast -->
+                    <rect x="17" y="4"  width="30" height="6" rx="1" fill="currentColor"/>
+                    <rect x="29" y="4"  width="6"  height="30" rx="1" fill="currentColor"/>
+                    <!-- D rotated 90° CCW (boat hull): flat bottom, curved top -->
+                    <path d="M 8 42
+                             Q 8 32, 20 32
+                             L 44 32
+                             Q 56 32, 56 42
+                             L 56 46
+                             L 8 46
+                             Z"
+                          fill="currentColor"/>
+                    <!-- Water line accent -->
+                    <path d="M 4 54 Q 16 51, 32 54 T 60 54"
+                          stroke="currentColor" stroke-width="2"
+                          fill="none" opacity="0.45"/>
+                </svg>
+            </span>
             <span>ENGINE</span>
         </div>
         <div class="picker" id="game-picker">
@@ -100,7 +134,26 @@
     <div id="loading-screen">
         <div class="loading-content">
             <div class="loading-logo">
-                <div class="logo-mark">TD</div>
+                <div class="logo-mark" aria-label="TD Engine logo">
+                    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                        <!-- T (sail): horizontal top bar + vertical mast -->
+                        <rect x="17" y="4"  width="30" height="6" rx="1.5" fill="currentColor"/>
+                        <rect x="29" y="4"  width="6"  height="30" rx="1.5" fill="currentColor"/>
+                        <!-- D rotated 90° CCW (boat hull): flat bottom, curved top -->
+                        <path d="M 8 42
+                                 Q 8 32, 20 32
+                                 L 44 32
+                                 Q 56 32, 56 42
+                                 L 56 46
+                                 L 8 46
+                                 Z"
+                              fill="currentColor"/>
+                        <!-- Water line accent -->
+                        <path d="M 4 54 Q 16 51, 32 54 T 60 54"
+                              stroke="currentColor" stroke-width="2.5"
+                              fill="none" opacity="0.45"/>
+                    </svg>
+                </div>
                 <div class="logo-text">TD ENGINE</div>
             </div>
             <div class="loading-bar">
@@ -187,11 +240,24 @@
     <!-- Scripts                                                                 -->
     <!-- ====================================================================== -->
 
-    <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
-    <script src="td-engine.js?v=5"></script>
+    <!--
+      NOTE: td-engine.js (the Emscripten glue) is NOT loaded via a static
+      <script> tag here. TDBridge._loadEmscriptenModule() injects it
+      dynamically AFTER setting global.Module = { canvas, print, ... } so the
+      glue picks up our config. Loading it statically caused two bugs:
+        1. The glue ran with default Module config (no canvas, no print hooks)
+           because global.Module wasn't set yet at parse time.
+        2. The bridge then re-injected a second td-engine.js tag (because its
+           querySelector('script[src="td-engine.js"]') didn't match the
+           cache-busted 'td-engine.js?v=5'), causing
+           "Uncaught SyntaxError: Identifier 'EmscriptenEH' has already been
+           declared" and breaking the site.
+    -->
 
-    <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
-    <script src="js_bridge.js?v=5"></script>
+    <!-- TDBridge - wraps Emscripten's Module with a clean JS API.
+         This script defines window.TDBridge but does NOT yet load WASM.
+         TDBridge.init(canvasId) loads td-engine.js + .wasm on demand. -->
+    <script src="js_bridge.js?v=6"></script>
 
     <!-- Sample game script is injected at runtime based on ?game= query param. -->
 
@@ -206,7 +272,7 @@
                 label: 'VOID RUNNER',
                 title: 'VOID RUNNER',
                 subtitle: 'A space shooter on TD Engine',
-                script: 'examples/voidrunner.js?v=5',
+                script: 'examples/voidrunner.js?v=6',
                 controls: [
                     { key: 'A / D  ← →',   action: 'Move left / right' },
                     { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
@@ -226,7 +292,7 @@
                 label: 'PONG',
                 title: 'PONG',
                 subtitle: 'Classic 2-player paddle game',
-                script: 'examples/pong.js?v=5',
+                script: 'examples/pong.js?v=6',
                 controls: [
                     { key: 'W / S',          action: 'Left paddle (player)' },
                     { key: '↑ / ↓',          action: 'Right paddle (AI)' },
@@ -239,7 +305,7 @@
                 label: 'BEAT DEMO',
                 title: 'BEAT DEMO',
                 subtitle: 'Rhythm game — tap on the beat to score',
-                script: 'examples/beat_demo.js?v=5',
+                script: 'examples/beat_demo.js?v=6',
                 controls: [
                     { key: 'Space', action: 'Hit (catch the falling note)' },
                     { key: 'R',     action: 'Restart after game over' },

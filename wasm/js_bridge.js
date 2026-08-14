@@ -173,18 +173,45 @@
           },
         };
 
+        // CRITICAL: pre-set global.Module BEFORE the emcc glue script runs.
+        // The glue does `var Module = typeof Module != 'undefined' ? Module : {};`
+        // at the top, so it picks up our config (canvas, print hooks, etc.).
         global.Module = moduleConfig;
 
-        const existingScript = document.querySelector('script[src="td-engine.js"]');
+        // Match any <script> whose src starts with 'td-engine.js' so we catch
+        // both 'td-engine.js' and 'td-engine.js?v=5' cache-bust variants.
+        // Using attribute-exactly-equal would MISS the ?v=... variant, which
+        // caused the bug where the bridge re-injected a second td-engine.js
+        // tag and triggered 'EmscriptenEH already declared'.
+        const scripts = document.querySelectorAll('script[src]');
+        let existingScript = null;
+        for (let i = 0; i < scripts.length; i++) {
+          const s = scripts[i].getAttribute('src');
+          // strip query string, compare basename
+          const base = s.split('?')[0].split('/').pop();
+          if (base === 'td-engine.js') { existingScript = scripts[i]; break; }
+        }
+
         if (!existingScript) {
+          // Dynamically inject with the same cache-bust as the host page.
+          // We sniff ?v=... from the bridge's own <script> tag so the cache
+          // key stays in lockstep with index.html.
+          const myTag = document.currentScript || document.querySelector('script[src*="js_bridge.js"]');
+          let version = '';
+          if (myTag) {
+            const m = /\?v=([^&]+)/.exec(myTag.getAttribute('src') || '');
+            if (m) version = '?v=' + m[1];
+          }
           const script = document.createElement('script');
-          script.src = 'td-engine.js';
+          script.src = 'td-engine.js' + version;
           script.async = true;
           script.onload  = () => resolve(global.Module);
           script.onerror = () => reject(new Error('Failed to load td-engine.js'));
           document.body.appendChild(script);
         } else {
-          // Script tag already present - poll for Module readiness.
+          // Script tag already present - poll for Module readiness. The glue
+          // merges our global.Module config on parse, then sets .asm after
+          // WASM compilation finishes.
           const start = performance.now();
           const poll = () => {
             if (global.Module && global.Module.asm) {
@@ -202,6 +229,12 @@
 
     // -------------------------------------------------------------------------
     // _waitForRuntime(Module) -> Promise<void>
+    //
+    // Resolves once the Emscripten runtime has both compiled the WASM
+    // (Module.asm is set) AND run the main() entry point (Module.calledRun).
+    // The latter is set by Module.onRuntimeInitialized -> run() -> calledRun=true.
+    // Some Emscripten configs call onRuntimeInitialized BEFORE calledRun is
+    // flipped, so we explicitly wait for both flags.
     // -------------------------------------------------------------------------
     _waitForRuntime(Module) {
       return new Promise((resolve, reject) => {
