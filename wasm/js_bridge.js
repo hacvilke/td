@@ -695,6 +695,7 @@
       if (this._logCallbacks.length === 0) {
         if (level === 'error') console.error('[TD]', line);
         else if (level === 'warn') console.warn('[TD]', line);
+        else if (level === 'deprecated') console.warn('%c[TD] ' + line, 'color:#c084fc;font-style:italic');
         else console.log('[TD]', line);
         return;
       }
