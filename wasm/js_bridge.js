@@ -158,6 +158,10 @@
     // -------------------------------------------------------------------------
     _loadEmscriptenModule(canvas) {
       return new Promise((resolve, reject) => {
+        // _runtimeReady is set to true by our onRuntimeInitialized hook
+        // below. We use this instead of the legacy Module.calledRun flag,
+        // which was removed in Emscripten 3.1.74+.
+        this._runtimeReady = false;
         const moduleConfig = {
           canvas: canvas,
           print:  (text) => this._emitLog('info',  text),
@@ -169,6 +173,7 @@
           noInitialRun: false,
           noExitRuntime: true,
           onRuntimeInitialized: () => {
+            this._runtimeReady = true;
             this._emitLog('info', 'Emscripten runtime initialized');
           },
         };
@@ -230,38 +235,29 @@
     // -------------------------------------------------------------------------
     // _waitForRuntime(Module) -> Promise<void>
     //
-    // Resolves once the Emscripten runtime has both compiled the WASM
-    // (Module.asm is set) AND run the main() entry point (Module.calledRun).
-    // The latter is set by Module.onRuntimeInitialized -> run() -> calledRun=true.
-    // Some Emscripten configs call onRuntimeInitialized BEFORE calledRun is
-    // flipped, so we explicitly wait for both flags.
+    // Resolves once the Emscripten runtime has finished initializing.
+    // We track readiness via the `this._runtimeReady` flag set by our
+    // onRuntimeInitialized hook in moduleConfig (set in _loadEmscriptenModule).
+    //
+    // We previously polled Module.calledRun, but Emscripten 3.1.74+ removed
+    // that flag entirely. The onRuntimeInitialized callback is the canonical
+    // signal that WASM has compiled + runtime is ready + exports are callable.
     // -------------------------------------------------------------------------
     _waitForRuntime(Module) {
       return new Promise((resolve, reject) => {
         const start = performance.now();
-        let triedManualRun = false;
         const check = () => {
-          if (Module.asm && Module.calledRun) {
+          if (this._runtimeReady && Module && Module.asm) {
             resolve();
             return;
           }
-          // Failsafe: if WASM has compiled (Module.asm set) but calledRun
-          // is still false after 5s, Emscripten's auto-run likely failed
-          // silently (e.g. an exception was swallowed during bootstrap).
-          // Try invoking Module._main() manually once.
-          if (!triedManualRun && Module.asm && typeof Module._main === 'function'
-              && performance.now() - start > 5000) {
-            triedManualRun = true;
-            try {
-              this._emitLog('warn', 'Emscripten auto-run did not complete; calling Module._main() manually');
-              Module.calledRun = true;
-              Module._main();
-            } catch (e) {
-              this._emitLog('error', 'Manual Module._main() threw: ' + (e && e.message || e));
-            }
-          }
           if (performance.now() - start > 20000) {
-            reject(new Error('Timed out waiting for Emscripten runtime'));
+            reject(new Error(
+              'Timed out waiting for Emscripten runtime' +
+              ' (ready=' + this._runtimeReady +
+              ', asm=' + (Module && !!Module.asm) +
+              ', _main=' + (Module && typeof Module._main) + ')'
+            ));
           } else {
             setTimeout(check, 30);
           }
