@@ -13,7 +13,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
     <style>
         /* ---- Game selector bar ---- */
         #game-selector {
@@ -338,7 +338,7 @@
     <!-- TDBridge - wraps Emscripten's Module with a clean JS API.
          This script defines window.TDBridge but does NOT yet load WASM.
          TDBridge.init(canvasId) loads td-engine.js + .wasm on demand. -->
-    <script src="js_bridge.js?v=7"></script>
+    <script src="js_bridge.js?v=8"></script>
 
     <!-- Sample game script is injected at runtime based on ?game= query param. -->
 
@@ -353,7 +353,7 @@
                 label: 'VOID RUNNER',
                 title: 'VOID RUNNER',
                 subtitle: 'A space shooter on TD Engine',
-                script: 'examples/voidrunner.js?v=7',
+                script: 'examples/voidrunner.js?v=8',
                 controls: [
                     { key: 'A / D  ← →',   action: 'Move left / right' },
                     { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
@@ -373,7 +373,7 @@
                 label: 'PONG',
                 title: 'PONG',
                 subtitle: 'Classic 2-player paddle game',
-                script: 'examples/pong.js?v=7',
+                script: 'examples/pong.js?v=8',
                 controls: [
                     { key: 'W / S',          action: 'Left paddle (player)' },
                     { key: '↑ / ↓',          action: 'Right paddle (AI)' },
@@ -386,7 +386,7 @@
                 label: 'BEAT DEMO',
                 title: 'BEAT DEMO',
                 subtitle: 'Rhythm game — tap on the beat to score',
-                script: 'examples/beat_demo.js?v=7',
+                script: 'examples/beat_demo.js?v=8',
                 controls: [
                     { key: 'Space', action: 'Hit (catch the falling note)' },
                     { key: 'R',     action: 'Restart after game over' },
@@ -396,6 +396,26 @@
                      'crosses the hit line.</p>' +
                      '<p>Hitting on-beat builds combo (bonus = 100 + combo × 10). ' +
                      'Missing or hitting off-beat resets your combo.</p>',
+            },
+            'script': {
+                label: 'SCRIPT ARENA',
+                title: 'SCRIPT ARENA',
+                subtitle: 'tdscript VM + i18n — Wave 1/2 module showcase',
+                script: 'examples/script_arena.js?v=8',
+                controls: [
+                    { key: '1 / Space (hold)', action: 'Spawn particle burst (calls tdscript spawn_burst)' },
+                    { key: '2',                action: 'Toggle gravity (tdscript state)' },
+                    { key: '3',                action: 'Cycle color palette (tdscript state)' },
+                    { key: '4',                action: 'Clear all (tdscript clear_all iterates + destroys)' },
+                    { key: 'L',                action: 'Cycle locale: en → es → fr → zh → ar' },
+                    { key: 'R',                action: 'Reset' },
+                    { key: 'Esc',              action: 'Engine pause overlay' },
+                ],
+                tip: '<p><b>Live demo of two Wave 1/2 modules:</b></p>' +
+                     '<p><span style="color:#67e8f9">●</span> <b>tdscript VM</b> — a Lua-like bytecode interpreter running INSIDE the WASM module. ' +
+                     'Spawning, palette, gravity, and clearing are all driven by a tdscript source string compiled at boot.</p>' +
+                     '<p><span style="color:#ffd24a">●</span> <b>i18n / Localization</b> — 5 locale tables loaded into the engine. ' +
+                     'Press <b>L</b> to cycle; Arabic flips the HUD to RTL via <code>td_i18n_is_rtl()</code>.</p>',
             },
         };
 

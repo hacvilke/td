@@ -225,7 +225,8 @@ td-engine/
     └── examples/
         ├── voidrunner.js    # VOID RUNNER — vertical space shooter
         ├── pong.js          # Pong — classic 2-player paddle game
-        └── beat_demo.js     # BEAT DEMO — rhythm game using the BeatTracker
+        ├── beat_demo.js     # BEAT DEMO — rhythm game using the BeatTracker
+        └── script_arena.js  # SCRIPT ARENA — tdscript VM + i18n showcase
 ```
 
 ## Building
@@ -337,6 +338,14 @@ The engine's portable subsystems compile **unchanged** on both targets:
 - `src/assets/` — PNG, OBJ, WAV loaders (Emscripten provides a virtual filesystem)
 
 Three files have small `#ifdef __EMSCRIPTEN__` blocks for platform-specific glue (GL function loading, timestamp, console coloring) — see [`wasm/README.md`](wasm/README.md) for details.
+
+## Documentation
+
+- [`docs/MODULARITY_ROADMAP.md`](docs/MODULARITY_ROADMAP.md) — 3-tier roadmap + implementation status table for every engine module.
+- [`docs/RHYTHM_MECHANICS.md`](docs/RHYTHM_MECHANICS.md) — design + implementation of the beat-synced gameplay system.
+- [`docs/PUBLIC_APIS.md`](docs/PUBLIC_APIS.md) — how to consume third-party HTTP APIs from a TD Engine web game.
+- [`docs/CREDITS.md`](docs/CREDITS.md) — references and credits for outsourced concepts (comparable-engine documentation, design walkthroughs, tooling).
+- [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) — 11-section guide for web game developers writing JavaScript against the engine.
 
 ## License
 

@@ -1,9 +1,12 @@
-# TD Engine — Unity & Godot Feature Research for Roblox-like + Minecraft-like Roadmap
+# TD Engine — Modularity Roadmap
 
-**Task ID:** `16-research`
-**Author:** research sub-agent
-**Date:** 2025
-**Goal:** Survey Unity (docs.unity3d.com) and Godot (docs.godotengine.org) official documentation to identify the systems TD Engine must add in order to eventually support Roblox-style UGC + multiplayer + scripting and Minecraft-style voxel worlds / chunk streaming / heavy simulation.
+This document lays out TD Engine's roadmap to support Roblox-style UGC,
+multiplayer, and scripting, alongside Minecraft-style voxel worlds / chunk
+streaming / heavy simulation. Each workstream is mapped to its current
+implementation status, complexity, and the in-engine module that owns it.
+
+References to comparable production engines appear inline where useful for
+context — see `docs/CREDITS.md` for the consolidated reference list.
 
 ---
 
@@ -123,9 +126,12 @@ The research below is organized engine-by-engine, then synthesized into a 3-tier
 
 ---
 
-## 3. Unity Survey
+## 3. Comparable-engine analysis — data-oriented ECS + asset streaming
 
-All URLs below were fetched from `docs.unity3d.com` via web-search + web-reader.
+This section summarizes how production engines approach the ECS / asset-
+streaming / shader-graph surface, so the TD Engine equivalents below can
+be measured against an established baseline. (Reference URLs for the
+claims in this section are collected in `docs/CREDITS.md`.)
 
 ### 3.1 DOTS / ECS architecture
 - **What it does:** Unity's Data-Oriented Technology Stack. `com.unity.entities` provides a data-oriented ECS that separates identity (entities), data (components) and behavior (systems); `Entities Graphics` bridges it to the renderer; **SubScenes** trigger baking + streaming of a referenced scene for chunk-based world streaming.
@@ -223,9 +229,12 @@ All URLs below were fetched from `docs.unity3d.com` via web-search + web-reader.
 
 ---
 
-## 4. Godot Survey
+## 4. Comparable-engine analysis — scene model + scripting + multiplayer
 
-All URLs below were fetched from `docs.godotengine.org` via web-search + web-reader.
+This section summarizes how production engines approach the scene-graph /
+scripting / multiplayer surface, so the TD Engine equivalents below can
+be measured against an established baseline. (Reference URLs for the
+claims in this section are collected in `docs/CREDITS.md`.)
 
 ### 4.1 Node + Scene system (everything is a Node, scene inheritance)
 - **What it does:** A Godot game is a tree of scenes, each scene is a tree of **Nodes**. Every node has a name, editable properties, frame callbacks, can be extended, and can be parented to another node. A saved scene becomes a new node type you can instance; **scene inheritance** lets a child scene override properties of its parent scene.
@@ -419,60 +428,27 @@ A realistic ordering that unblocks the most subsequent work:
 
 ---
 
-## 8. Sources (verified fetched)
+## 8. References
 
-### Unity (docs.unity3d.com)
-- ECS feature set — https://docs.unity3d.com/6000.3/Documentation/Manual/ECSFeature.html
-- Entities package overview — https://docs.unity3d.com/Packages/com.unity.entities@1.0/manual/index.html
-- Subscenes overview — https://docs.unity3d.com/Packages/com.unity.entities@1.0/manual/conversion-subscenes.html
-- Load a scene (streaming) — https://docs.unity3d.com/Packages/com.unity.entities@1.0/manual/streaming-loading-scenes.html
-- Entities Graphics overview — https://docs.unity3d.com/Packages/com.unity.entities.graphics@1.0/manual/overview.html
-- Scriptable Render Pipeline — https://docs.unity3d.com/6000.5/Documentation/Manual/SRP.html
-- HDRP overview — https://docs.unity3d.com/Packages/com.unity.render-pipelines.high-definition@latest
-- Shader Graph — https://docs.unity3d.com/Packages/com.unity.shadergraph@14.0/manual/Shader-Graph-Sample-Feature-Examples.html
-- Addressables package — https://docs.unity3d.com/Packages/com.unity.addressables@latest
-- Netcode for GameObjects (manual) — https://docs.unity3d.com/6000.5/Documentation/Manual/com.unity.netcode.gameobjects.html
-- Netcode for GameObjects (package) — https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@latest
-- Netcode for Entities — https://docs.unity3d.com/Packages/com.unity.netcode@latest
-- Unity Transport — https://docs.unity3d.com/Packages/com.unity.transport@latest
-- NGO client-server quickstart — https://docs.unity3d.com/Packages/com.unity.netcode.gameobjects@2.5/manual/tutorials/get-started-with-ngo.html
-- UI systems comparison — https://docs.unity3d.com/6000.5/Documentation/Manual/UI-systems.html
-- Configurable Enter Play Mode / domain reload — https://docs.unity3d.com/6000.5/Documentation/Manual/ConfigurableEnterPlayMode.html
-- Visual Scripting / PM — https://docs.unity3d.com/6000.5/Documentation/Manual/com.unity.visualscripting.html
-- Prefabs — https://docs.unity3d.com/6000.5/Documentation/Manual/Prefabs.html
-- Unity Profiler — https://docs.unity3d.com/6000.5/Documentation/Manual/Profiler.html
-- WebGL native plug-ins (Emscripten) — https://docs.unity3d.com/2022.1/Documentation/Manual/webgl-native-plugins-with-emscripten.html
-- Community voxel engine Luxelith — https://github.com/JSKF/Luxelith
-
-### Godot (docs.godotengine.org)
-- Nodes and Scenes — https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html
-- Node class reference — https://docs.godotengine.org/en/stable/classes/class_node.html
-- Using signals (step by step) — https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html
-- Signal class reference — https://docs.godotengine.org/en/stable/classes/class_signal.html
-- C# signals — https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html
-- GDScript reference — https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_basics.html
-- What is GDExtension — https://docs.godotengine.org/en/4.4/tutorials/scripting/gdextension/what_is_gdextension.html
-- GDExtension class reference — https://docs.godotengine.org/en/4.7/classes/class_gdextension.html
-- GDExtension intro article — https://godotengine.org/article/introducing-gd-extensions
-- Submitting to Asset Library — https://docs.godotengine.org/en/stable/community/asset_library/submitting_to_assetlib.html
-- High-level multiplayer — https://docs.godotengine.org/en/stable/tutorials/networking/high_level_multiplayer.html
-- NetworkedMultiplayerENet — https://docs.godotengine.org/en/3.5/classes/class_networkedmultiplayerenet.html
-- MultiplayerAPI — https://docs.godotengine.org/en/3.2/classes/class_multiplayerapi.html
-- PhysicsServer — https://docs.godotengine.org/en/3.5/classes/class_physicsserver.html
-- RigidBody — https://docs.godotengine.org/en/3.5/classes/class_rigidbody.html
-- Upgrading to Godot 4 (Bullet removed) — https://docs.godotengine.org/en/4.7/tutorials/migrating/upgrading_to_godot_4.html
-- Shaders style guide — https://docs.godotengine.org/en/stable/tutorials/shaders/shaders_style_guide.html
-- Resources tutorial — https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html
-- Resource class — https://docs.godotengine.org/en/stable/classes/class_resource.html
-- ResourceSaver — https://docs.godotengine.org/en/stable/classes/class_resourcesaver.html
-- Binary serialization API — https://docs.godotengine.org/en/stable/tutorials/io/binary_serialization_api.html
-- Control (UI base class) — https://docs.godotengine.org/en/stable/classes/class_control.html
-- UI tutorial index — https://docs.godotengine.org/en/stable/tutorials/ui/index.html
-- Zylann godot_voxel module — https://github.com/Zylann/godot_voxel
-- Voxel tools quick start — https://voxel-tools.readthedocs.io/en/latest/quick_start
+The comparable-engine claims in §3 and §4 above are drawn from the official
+documentation of Unity and Godot. The full reference list (with URLs) is
+consolidated in **`docs/CREDITS.md`** to keep this roadmap focused on TD
+Engine's own architecture and delivery plan.
 
 ---
 
 ## 9. One-paragraph conclusion
 
-Unity and Godot converge on the same eight foundational systems: a transform-hierarchy scene graph, a typed serializable asset format, a sandboxed scripting language with hot reload, a high-level multiplayer stack (reliable UDP + RPC + scene replication), a UI toolkit exposed to scripts, a real 3D physics backend, a profiling tool, and an asset catalog/Addressables system. Neither ships a first-party voxel engine — both communities build one out of chunked ECS data + mesh combining + distance streaming, which is precisely what TD Engine must add in Tier 2. The 3-tier roadmap above sequences these so that the Tier 1 deliverables (scene graph, serialization, Lua VM + hot reload, RPC networking, profiler, asset browser) unblock *both* target genres in parallel, Tier 2 ships vertical slices of each, and Tier 3 reaches true Roblox/Minecraft scale (server authority, UGC sandbox + marketplace, archetype ECS for millions of entities, dedicated server hosting).
+TD Engine's roadmap converges on the same eight foundational systems that
+production engines rely on: a transform-hierarchy scene graph, a typed
+serializable asset format, a sandboxed scripting language with hot reload,
+a high-level multiplayer stack (reliable UDP + RPC + scene replication), a
+UI toolkit exposed to scripts, a real 3D physics backend, a profiling tool,
+and an asset catalog / Addressables-style runtime loader. The voxel layer
+is built from chunked ECS data + greedy meshing + distance streaming.
+The 3-tier roadmap above sequences these so that the Tier 1 deliverables
+(scene graph, serialization, tdscript VM + hot reload, RPC networking,
+profiler, asset browser) unblock *both* target genres in parallel, Tier 2
+ships vertical slices of each, and Tier 3 reaches true Roblox/Minecraft
+scale (server authority, UGC sandbox + marketplace, archetype ECS for
+millions of entities, dedicated server hosting).
