@@ -16,9 +16,16 @@ namespace td {
 // GLSL ES compiler ('core' is an invalid version directive). Conversely,
 // `#version 300 es` is invalid on desktop GL 3.3 contexts. So we select
 // the correct source at compile time via #ifdef __EMSCRIPTEN__.
+//
+// IMPORTANT: GLSL requires the #version directive to be the literal first
+// characters of the shader source — no leading newline, no comment, no
+// whitespace. We use a custom raw-string delimiter R"GLSL_ES(...)GLSL_ES"
+// (instead of the bare R"(...)") so the #version line can sit immediately
+// after the opening paren with no inserted newline. The default R"( form
+// always starts the string with a newline after the (, which causes:
+//   "ERROR: 0:2: #version directive must occur on the first line of the shader"
 #ifdef __EMSCRIPTEN__
-static const char* SPRITE_VERT_SRC = R"(
-#version 300 es
+static const char* SPRITE_VERT_SRC = R"GLSL_ES(#version 300 es
 precision highp float;
 layout (location = 0) in vec2 a_position;
 layout (location = 1) in vec2 a_texcoord;
@@ -35,10 +42,9 @@ void main() {
     v_texcoord = a_texcoord;
     v_color = a_color;
 }
-)";
+)GLSL_ES";
 
-static const char* SPRITE_FRAG_SRC = R"(
-#version 300 es
+static const char* SPRITE_FRAG_SRC = R"GLSL_ES(#version 300 es
 precision highp float;
 in vec2 v_texcoord;
 in vec4 v_color;
@@ -52,10 +58,9 @@ void main() {
     if (texColor.a < 0.01) discard;
     FragColor = texColor * v_color;
 }
-)";
+)GLSL_ES";
 #else
-static const char* SPRITE_VERT_SRC = R"(
-#version 330 core
+static const char* SPRITE_VERT_SRC = R"GLSL(#version 330 core
 layout (location = 0) in vec2 a_position;
 layout (location = 1) in vec2 a_texcoord;
 layout (location = 2) in vec4 a_color;
@@ -71,10 +76,9 @@ void main() {
     v_texcoord = a_texcoord;
     v_color = a_color;
 }
-)";
+)GLSL";
 
-static const char* SPRITE_FRAG_SRC = R"(
-#version 330 core
+static const char* SPRITE_FRAG_SRC = R"GLSL(#version 330 core
 in vec2 v_texcoord;
 in vec4 v_color;
 
@@ -87,7 +91,7 @@ void main() {
     if (texColor.a < 0.01) discard;
     FragColor = texColor * v_color;
 }
-)";
+)GLSL";
 #endif
 
 bool SpriteBatch::init() {
