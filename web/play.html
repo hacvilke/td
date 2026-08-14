@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="TD Engine - WebAssembly game runtime. The same C++ engine that runs on desktop, now in your browser. Play VOID RUNNER, Pong, or the Beat Demo rhythm game.">
+    <meta name="theme-color" content="#0a0e14">
+    <!-- SVG favicon: same boat logo as the top bar, scalable, no .ico needed. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
+    <!-- Cache-bust: tell browser not to cache the page itself, so users always
+         get the latest version. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>TD Engine - Web Player</title>
+    <link rel="stylesheet" href="style.css?v=22">
+    <!-- Server URL router: lets users self-host the engine on their own
+         VPN/server/CDN by adding ?server=<URL> to the page URL.
+         Loaded BEFORE js_bridge.js so the bridge can use TDServerRouter.resolveAsset(). -->
+    <script src="server_router.js?v=22"></script>
+    <!-- Deprecated API tracker + filter console tabs (Godot-like error feedback).
+         Wraps TDBridge.onLog to classify [DEPRECATED] messages and adds
+         All|Info|Warning|Error|Deprecated filter tabs to the on-page console. -->
+    <script src="deprecated_tracker.js?v=22"></script>
+    <script>
+      // Rebase all asset URLs on the chosen server BEFORE any <script src>
+      // tags execute. We patch document.createElement to rewrite script src
+      // + link href attributes that point at known engine assets.
+      (function () {
+        const SERVER = (window.TDServerRouter || { getCurrentServerUrl: function(){return ''} }).getCurrentServerUrl();
+        if (!SERVER) return;  // same-origin — no patching needed
+        // Engine assets that should be loaded from the custom server.
+        const ENGINE_ASSETS = [
+          'td-engine.js', 'td-engine.wasm', 'td-engine.data',
+          'js_bridge.js', 'style.css',
+        ];
+        const ENGINE_DIRS = ['examples/'];
+        function shouldRewrite(url) {
+          if (!url) return false;
+          // Skip absolute URLs that already point elsewhere
+          if (/^https?:\/\//.test(url) || url.startsWith('//')) return false;
+          if (url.startsWith('data:') || url.startsWith('blob:')) return false;
+          const clean = url.split('?')[0].split('#')[0];
+          const base = clean.split('/').pop();
+          if (ENGINE_ASSETS.indexOf(base) !== -1) return true;
+          for (let i = 0; i < ENGINE_DIRS.length; i++) {
+            if (clean.startsWith(ENGINE_DIRS[i])) return true;
+          }
+          return false;
+        }
+        function rewrite(url) {
+          if (!shouldRewrite(url)) return url;
+          const clean = url.replace(/^\/+/, '');
+          return SERVER + clean;
+        }
+        // Patch createElement('script') and createElement('link')
+        const origCreate = document.createElement.bind(document);
+        document.createElement = function (tag) {
+          const el = origCreate(tag);
+          if (typeof tag === 'string' && (tag.toLowerCase() === 'script' || tag.toLowerCase() === 'link')) {
+            const desc = Object.getOwnPropertyDescriptor(el.__proto__, 'src') ||
+                         Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+            // Use a setter hook via Object.defineProperty on the instance
+            try {
+              const realSet = (desc && desc.set) || function (v) { el.setAttribute('src', v); };
+              const realGet = (desc && desc.get) || function () { return el.getAttribute('src'); };
+              Object.defineProperty(el, 'src', {
+                configurable: true, enumerable: true,
+                get: realGet,
+                set: function (v) { realSet.call(el, rewrite(v)); }
+              });
+            } catch (e) { /* IE11 fallback — not relevant for modern browsers */ }
+          }
+          return el;
+        };
+        // Also patch setAttribute('src', ...) on script/link elements
+        const origSetAttr = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function (name, value) {
+          if ((this.tagName === 'SCRIPT' || this.tagName === 'LINK') &&
+              typeof name === 'string' && name.toLowerCase() === 'src') {
+            value = rewrite(value);
+          }
+          return origSetAttr.call(this, name, value);
+        };
+        console.info('[TDServerRouter] Engine assets will be loaded from: ' + SERVER);
+      })();
+    </script>
+    <style>
+        /* ---- Game selector bar ---- */
+        #game-selector {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 12px;
+            background: linear-gradient(180deg, #0a0e14 0%, #11161e 100%);
+            border-bottom: 1px solid #1f2937;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            color: #cbd5e1;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        #game-selector .brand {
+            display: flex; align-items: center; gap: 6px;
+            margin-right: 12px;
+            font-weight: 700; color: #67e8f9;
+            letter-spacing: 0.5px;
+        }
+        #game-selector .brand .mark {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 22px; height: 22px;
+            color: #67e8f9;
+            filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.5));
+        }
+        #game-selector .brand .mark svg { width: 100%; height: 100%; }
+        /* Gentle boat rocking animation - 4s cycle, ±4° */
+        @keyframes td-boat-rock {
+            0%, 100% { transform: rotate(-3deg); }
+            50%      { transform: rotate(3deg); }
+        }
+        #game-selector .brand .mark svg { animation: td-boat-rock 4s ease-in-out infinite; transform-origin: 50% 75%; }
+        #game-selector .picker { display: flex; gap: 4px; flex-wrap: wrap; }
+        #game-selector .picker button {
+            background: transparent;
+            border: 1px solid #1f2937;
+            color: #94a3b8;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        #game-selector .picker button:hover {
+            background: #1f2937;
+            color: #e2e8f0;
+            border-color: #334155;
+        }
+        #game-selector .picker button.active {
+            background: #67e8f9;
+            color: #0a0e14;
+            border-color: #67e8f9;
+            font-weight: 700;
+        }
+        #game-selector .meta {
+            margin-left: auto;
+            font-size: 11px;
+            color: #64748b;
+        }
+        #game-selector .meta a {
+            color: #67e8f9;
+            text-decoration: none;
+        }
+        #game-selector .meta a:hover { text-decoration: underline; }
+
+        /* Push the rest of the page down below the fixed bar */
+        body { padding-top: 44px; }
+    </style>
+</head>
+<body>
+
+    <!-- ====================================================================== -->
+    <!-- Game selector bar                                                       -->
+    <!-- ====================================================================== -->
+    <div id="game-selector">
+        <div class="brand">
+            <span class="mark" aria-label="TD Engine logo">
+                <!--
+                  TD boat logo: T upright as the sail/mast, D rotated 90°
+                  counter-clockwise (flat side down, curved side up) so it
+                  reads as a boat hull. The whole mark rocks gently via the
+                  td-boat-rock keyframe animation defined in <style> above.
+                -->
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                    <!-- T (sail): horizontal top bar + vertical mast -->
+                    <rect x="17" y="4"  width="30" height="6" rx="1" fill="currentColor"/>
+                    <rect x="29" y="4"  width="6"  height="30" rx="1" fill="currentColor"/>
+                    <!-- D rotated 90° CCW (boat hull): flat bottom, curved top -->
+                    <path d="M 8 42
+                             Q 8 32, 20 32
+                             L 44 32
+                             Q 56 32, 56 42
+                             L 56 46
+                             L 8 46
+                             Z"
+                          fill="currentColor"/>
+                    <!-- Water line accent -->
+                    <path d="M 4 54 Q 16 51, 32 54 T 60 54"
+                          stroke="currentColor" stroke-width="2"
+                          fill="none" opacity="0.45"/>
+                </svg>
+            </span>
+            <span>ENGINE</span>
+        </div>
+        <div class="picker" id="game-picker">
+            <!-- Populated by JS below. -->
+        </div>
+        <div class="meta">
+            <a href="index.html" title="Back to homepage">Home</a>
+            &nbsp;|&nbsp;
+            <a href="docs.html" title="Read the docs">Docs</a>
+            &nbsp;|&nbsp;
+            <a href="#" id="features-link" title="Show engine features">Features</a>
+            &nbsp;|&nbsp;
+            <a href="#" id="multiplayer-link" title="Multiplayer server settings — connect to a self-hosted server">Multiplayer</a>
+            &nbsp;|&nbsp;
+            <a href="#" id="inspect-link" title="Open the live ECS inspector">Inspect</a>
+            &nbsp;|&nbsp;
+            <a href="#" id="profiler-link" title="Toggle the frame profiler overlay">Profiler</a>
+            &nbsp;|&nbsp;
+            <a href="#" id="save-link" title="Save / load game state">Save</a>
+            &nbsp;|&nbsp;
+            <a href="#" id="console-link" title="Toggle the engine log console">Console</a>
+            &nbsp;|&nbsp;
+            <a href="https://github.com/hacvilke/td/releases/tag/latest" target="_blank" rel="noopener">Download Windows .exe</a>
+            &nbsp;|&nbsp;
+            <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">Source</a>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Loading Screen                                                          -->
+    <!-- ====================================================================== -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-logo">
+                <div class="logo-mark" aria-label="TD Engine logo">
+                    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                        <!-- T (sail): horizontal top bar + vertical mast -->
+                        <rect x="17" y="4"  width="30" height="6" rx="1.5" fill="currentColor"/>
+                        <rect x="29" y="4"  width="6"  height="30" rx="1.5" fill="currentColor"/>
+                        <!-- D rotated 90° CCW (boat hull): flat bottom, curved top -->
+                        <path d="M 8 42
+                                 Q 8 32, 20 32
+                                 L 44 32
+                                 Q 56 32, 56 42
+                                 L 56 46
+                                 L 8 46
+                                 Z"
+                              fill="currentColor"/>
+                        <!-- Water line accent -->
+                        <path d="M 4 54 Q 16 51, 32 54 T 60 54"
+                              stroke="currentColor" stroke-width="2.5"
+                              fill="none" opacity="0.45"/>
+                    </svg>
+                </div>
+                <div class="logo-text">TD ENGINE</div>
+            </div>
+            <div class="loading-bar">
+                <div id="progress-bar-fill" class="progress-bar-fill"></div>
+            </div>
+            <div id="loading-detail" class="loading-detail">Initializing...</div>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Game Canvas                                                             -->
+    <!-- ====================================================================== -->
+    <canvas id="game-canvas" width="800" height="600" style="display: none;"></canvas>
+
+    <!-- ====================================================================== -->
+    <!-- HUD - FPS counter                                                       -->
+    <!-- ====================================================================== -->
+    <div id="fps-counter" style="display: none;">FPS: 0</div>
+
+    <!-- ====================================================================== -->
+    <!-- Controls Overlay - shown before the game starts.                        -->
+    <!-- Content is data-driven: see GAME_METADATA below.                        -->
+    <!-- ====================================================================== -->
+    <div id="controls-overlay" style="display: none;">
+        <div class="controls-card">
+            <h1 class="controls-title" id="game-title">VOID RUNNER</h1>
+            <p class="controls-subtitle" id="game-subtitle">A space shooter on TD Engine</p>
+
+            <div class="controls-grid" id="controls-grid">
+                <!-- Populated by JS. -->
+            </div>
+
+            <div class="controls-tip" id="controls-tip">
+                <!-- Populated by JS. -->
+            </div>
+
+            <button id="start-button" class="start-button">Start</button>
+            <p class="controls-hint">Click anywhere to begin</p>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Pause Overlay                                                           -->
+    <!-- ====================================================================== -->
+    <div id="pause-overlay" style="display: none;">
+        <div class="pause-card">
+            <h2 class="pause-title">Paused</h2>
+            <button id="resume-button" class="resume-button">Resume</button>
+            <button id="restart-button" class="restart-button">Restart Scene</button>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Engine Console - mirrors td::Logger output                              -->
+    <!-- ====================================================================== -->
+    <div id="engine-console" style="display: none;">
+        <div id="console-header">
+            <span>TD ENGINE CONSOLE</span>
+            <button id="console-close" title="Hide console">&times;</button>
+        </div>
+        <div id="console-output"></div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Features Showcase Overlay                                               -->
+    <!-- Clicking "Features" in the top bar opens this overlay, which lists the  -->
+    <!-- 14 production-ready engine modules shipped in Wave 1 + Wave 2 of the    -->
+    <!-- gauntlet. Each entry links to the source file in the GitHub repo.       -->
+    <!-- ====================================================================== -->
+    <div id="features-overlay" style="display: none;">
+        <div class="features-card">
+            <div class="features-header">
+                <h2>TD Engine — Feature Surface</h2>
+                <button id="features-close" title="Close">&times;</button>
+            </div>
+            <p class="features-tagline">
+                14 production-ready modules. 348 tests. 98.6% pass rate.
+                Same C++ source runs on Windows desktop and in any modern browser.
+            </p>
+            <div class="features-grid">
+                <div class="feature-section">
+                    <h3>Scripting</h3>
+                    <ul>
+                        <li><b>tdscript VM</b> — Custom Lua-like bytecode interpreter (3,075 lines). Lexer → parser → compiler → stack-based VM. Hot reload.</li>
+                        <li><b>Visual Scripting</b> — Node-based graph compiler. Generates tdscript source.</li>
+                    </ul>
+                </div>
+                <div class="feature-section">
+                    <h3>Networking</h3>
+                    <ul>
+                        <li><b>Reliable UDP Transport</b> — Sliding-window ARQ, fragment reassembly, RPC system.</li>
+                        <li><b>Server-Authoritative Netcode</b> — Client prediction + rewind/replay, lag compensation.</li>
+                    </ul>
+                </div>
+                <div class="feature-section">
+                    <h3>Voxel</h3>
+                    <ul>
+                        <li><b>Greedy Mesher</b> — 5-10x fewer triangles than naive meshing.</li>
+                        <li><b>Worldgen</b> — 4-octave simplex noise, trees, ores, water.</li>
+                        <li><b>Lighting</b> — Sunlight + BFS block light.</li>
+                        <li><b>Streaming</b> — Background-thread chunk loader with frustum culling.</li>
+                    </ul>
+                </div>
+                <div class="feature-section">
+                    <h3>UI Toolkit</h3>
+                    <ul>
+                        <li><b>13 Widgets</b> — Container, Label, Button, Slider, TextInput, ScrollView, ListView (10K items &lt;1ms), Dropdown, Modal, Tooltip, Canvas.</li>
+                        <li><b>Real Flexbox</b> — justify-content, align-items, flex-grow/shrink/basis.</li>
+                    </ul>
+                </div>
+                <div class="feature-section">
+                    <h3>Animation + Audio</h3>
+                    <ul>
+                        <li><b>Skeletal Animation</b> — Bone hierarchy, clips, cross-fade, 4-bone GPU skinning.</li>
+                        <li><b>3D Positional Audio</b> — HRTF-lite panning, Schroeder reverb, Doppler.</li>
+                    </ul>
+                </div>
+                <div class="feature-section">
+                    <h3>Graphics</h3>
+                    <ul>
+                        <li><b>Visual Shader Graph</b> — Node-based editor, GLSL codegen.</li>
+                        <li><b>WebGPU Path</b> — Backend selection + WGSL templates (Dawn/wgpu bindings TODO).</li>
+                    </ul>
+                </div>
+                <div class="feature-section">
+                    <h3>Platform</h3>
+                    <ul>
+                        <li><b>i18n</b> — Locale fallback, plural forms, RTL detection.</li>
+                        <li><b>Mobile/XR/Gamepad</b> — Multi-touch + gestures, 6-DoF XR controllers, Standard Gamepad.</li>
+                        <li><b>Plugin ABI</b> — GDExtension-equivalent C ABI with hot reload.</li>
+                        <li><b>Asset Catalog</b> — Addressables-style async load + LRU eviction.</li>
+                        <li><b>Archetype ECS</b> — DOTS-style contiguous arrays per archetype.</li>
+                    </ul>
+                </div>
+            </div>
+            <p class="features-footer">
+                See <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener">MODULARITY_ROADMAP.md</a>
+                for the full implementation status table.
+            </p>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Latest Release Ticker                                                   -->
+    <!-- Fetches /releases/tags/latest from the GitHub API on page load + every -->
+    <!-- 5 minutes. Shows the newest bug-fix / feature release so visitors see   -->
+    <!-- at a glance what changed. Clicking it jumps to the release page.        -->
+    <!-- ====================================================================== -->
+    <div id="release-ticker">
+        <div class="ticker-inner">
+            <div class="ticker-label">
+                <span class="ticker-pulse"></span>
+                <span class="ticker-text">Latest release</span>
+            </div>
+            <div class="ticker-content" id="release-ticker-content">
+                <span class="ticker-loading">Loading latest release…</span>
+            </div>
+            <a class="ticker-link" id="release-ticker-link" href="https://github.com/hacvilke/td/releases/tag/latest" target="_blank" rel="noopener">View →</a>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- Scripts                                                                 -->
+    <!-- ====================================================================== -->
+
+    <!--
+      NOTE: td-engine.js (the Emscripten glue) is NOT loaded via a static
+      <script> tag here. TDBridge._loadEmscriptenModule() injects it
+      dynamically AFTER setting global.Module = { canvas, print, ... } so the
+      glue picks up our config. Loading it statically caused two bugs:
+        1. The glue ran with default Module config (no canvas, no print hooks)
+           because global.Module wasn't set yet at parse time.
+        2. The bridge then re-injected a second td-engine.js tag (because its
+           querySelector('script[src="td-engine.js"]') didn't match the
+           cache-busted 'td-engine.js?v=5'), causing
+           "Uncaught SyntaxError: Identifier 'EmscriptenEH' has already been
+           declared" and breaking the site.
+    -->
+
+    <!-- TDBridge - wraps Emscripten's Module with a clean JS API.
+         This script defines window.TDBridge but does NOT yet load WASM.
+         TDBridge.init(canvasId) loads td-engine.js + .wasm on demand. -->
+    <script src="js_bridge.js?v=22"></script>
+    <!-- Modular API layer: wraps the low-level TDBridge/Module._td_* C API
+         in a clean, Godot-like namespace. Use TDEngine.ecs.create(),
+         TDEngine.input.isKeyDown(), TDEngine.beat.start(), etc.
+         Old TDBridge API still works (with a one-time deprecation warning). -->
+    <script src="td_api.js?v=22"></script>
+    <!-- Network module: WebSocket transport + RPC + saved server profiles.
+         Use TDEngine.net.connect(url) or TDNet.connect(url) for multiplayer.
+         Adds a "Multiplayer" link to the top bar that opens the server config panel. -->
+    <script src="net_websocket.js?v=22"></script>
+    <!-- Live ECS Inspector: read-only Godot-like entity/component browser.
+         Adds an "Inspect" link to the top bar that opens a side panel. -->
+    <script src="inspector.js?v=22"></script>
+    <!-- Frame profiler: rolling frame-time graph + counters + heap meter. -->
+    <script src="profiler.js?v=22"></script>
+    <!-- Error boundary: friendly crash card with stack trace + submit/reload. -->
+    <script src="error_boundary.js?v=22"></script>
+    <!-- Persistence: save/load game state to localStorage with named slots
+         + autosave. Games register serializers via TDPersistence.registerSerializer(). -->
+    <script src="persistence.js?v=22"></script>
+    <!-- Peer-to-peer transport: BroadcastChannel-backed real multiplayer
+         for the web. No server required — open 2+ tabs to play together. -->
+    <script src="net_peer.js?v=22"></script>
+
+    <!-- Sample game script is injected at runtime based on ?game= query param. -->
+
+    <script>
+        // =====================================================================
+        // Game metadata — drives both the picker bar and the controls overlay.
+        // To add a fourth demo, just add an entry here and ship its .js file
+        // under web/examples/.
+        // =====================================================================
+        const GAME_METADATA = {
+            'voidrunner': {
+                label: 'VOID RUNNER',
+                title: 'VOID RUNNER',
+                subtitle: 'A space shooter on TD Engine',
+                script: 'examples/voidrunner.js?v=22',
+                controls: [
+                    { key: 'A / D  ← →',   action: 'Move left / right' },
+                    { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
+                    { key: 'Space',        action: 'Shoot (hold)' },
+                    { key: 'P',            action: 'Pause' },
+                    { key: 'R',            action: 'Restart (after game over)' },
+                    { key: 'Esc',          action: 'Engine pause overlay' },
+                ],
+                tip: '<p><span style="color:#ff6b6b">●</span> Drones &middot; ' +
+                     '<span style="color:#ffa64d">●</span> Hunters track you &middot; ' +
+                     '<span style="color:#b380ff">●</span> Tanks shoot back</p>' +
+                     '<p>Grab powerups: <span style="color:#ffd24a">RAPID</span> &middot; ' +
+                     '<span style="color:#66ff80">TRIPLE</span> &middot; ' +
+                     '<span style="color:#66b3ff">SHIELD</span></p>',
+            },
+            'pong': {
+                label: 'PONG',
+                title: 'PONG',
+                subtitle: 'Classic 2-player paddle game',
+                script: 'examples/pong.js?v=22',
+                controls: [
+                    { key: 'W / S',          action: 'Left paddle (player)' },
+                    { key: '↑ / ↓',          action: 'Right paddle (AI)' },
+                    { key: 'Space',          action: 'Pause / resume' },
+                    { key: 'Esc',            action: 'Show pause overlay' },
+                ],
+                tip: '<p>First to 7 points wins. The right paddle plays itself.</p>',
+            },
+            'beat': {
+                label: 'BEAT DEMO',
+                title: 'BEAT DEMO',
+                subtitle: 'Rhythm game — tap on the beat to score',
+                script: 'examples/beat_demo.js?v=22',
+                controls: [
+                    { key: 'Space', action: 'Hit (catch the falling note)' },
+                    { key: 'R',     action: 'Restart after game over' },
+                    { key: 'Esc',   action: 'Engine pause overlay' },
+                ],
+                tip: '<p>Notes fall on every beat at 100 BPM. Tap <b>Space</b> when a note ' +
+                     'crosses the hit line.</p>' +
+                     '<p>Hitting on-beat builds combo (bonus = 100 + combo × 10). ' +
+                     'Missing or hitting off-beat resets your combo.</p>',
+            },
+            'script': {
+                label: 'SCRIPT ARENA',
+                title: 'SCRIPT ARENA',
+                subtitle: 'tdscript VM + i18n — Wave 1/2 module showcase',
+                script: 'examples/script_arena.js?v=22',
+                controls: [
+                    { key: '1 / Space (hold)', action: 'Spawn particle burst (calls tdscript spawn_burst)' },
+                    { key: '2',                action: 'Toggle gravity (tdscript state)' },
+                    { key: '3',                action: 'Cycle color palette (tdscript state)' },
+                    { key: '4',                action: 'Clear all (tdscript clear_all iterates + destroys)' },
+                    { key: 'L',                action: 'Cycle locale: en → es → fr → zh → ar' },
+                    { key: 'R',                action: 'Reset' },
+                    { key: 'Esc',              action: 'Engine pause overlay' },
+                ],
+                tip: '<p><b>Live demo of two Wave 1/2 modules:</b></p>' +
+                     '<p><span style="color:#67e8f9">●</span> <b>tdscript VM</b> — a Lua-like bytecode interpreter running INSIDE the WASM module. ' +
+                     'Spawning, palette, gravity, and clearing are all driven by a tdscript source string compiled at boot.</p>' +
+                     '<p><span style="color:#ffd24a">●</span> <b>i18n / Localization</b> — 5 locale tables loaded into the engine. ' +
+                     'Press <b>L</b> to cycle; Arabic flips the HUD to RTL via <code>td_i18n_is_rtl()</code>.</p>',
+            },
+            'net': {
+                label: 'NET ARENA',
+                title: 'NET ARENA',
+                subtitle: 'Wave 3 showcase — modular API + deprecated tracker + WebSocket networking',
+                script: 'examples/net_arena.js?v=22',
+                controls: [
+                    { key: 'WASD / Arrows', action: 'Move (tag red drones to score)' },
+                    { key: 'D',             action: 'Trigger deprecated API warning (purple tab +1)' },
+                    { key: 'N',             action: 'Toggle WebSocket network echo (RTT measurement)' },
+                    { key: 'P',             action: 'Pause / resume' },
+                    { key: 'R',             action: 'Restart' },
+                    { key: 'Esc',           action: 'Engine pause overlay' },
+                ],
+                tip: '<p><b>Live demo of the four Wave 3 web modules (v=18→v=21):</b></p>' +
+                     '<p><span style="color:#67e8f9">●</span> <b>Modular TDEngine API (v=20)</b> — all entity creation, movement, ' +
+                     'and rendering goes through TDEngine.ecs.* / TDEngine.input.* instead of raw Module._td_*.</p>' +
+                     '<p><span style="color:#c084fc">●</span> <b>Deprecated API Tracker (v=19)</b> — press D to fire a deprecated ' +
+                     'warning. Watch the purple Deprecated tab in the bottom console increment.</p>' +
+                     '<p><span style="color:#4ade80">●</span> <b>Network Module (v=21)</b> — press N to connect to a WebSocket ' +
+                     'echo server; HUD shows live RTT.</p>' +
+                     '<p><span style="color:#fbbf24">●</span> <b>Server URL Router (v=18)</b> — HUD shows where the engine assets ' +
+                     'are loaded from (this site or your own server if ?server= was set).</p>',
+            },
+            'net2': {
+                label: 'NET ARENA 2',
+                title: 'NET ARENA 2',
+                subtitle: 'Real P2P multiplayer — open 2+ tabs and play together',
+                script: 'examples/net_arena_2.js?v=22',
+                controls: [
+                    { key: 'WASD / Arrows', action: 'Move' },
+                    { key: 'Mouse',         action: 'Aim' },
+                    { key: 'Left Click',    action: 'Shoot (hold for auto-fire)' },
+                    { key: 'P',             action: 'Pause / resume' },
+                    { key: 'R',             action: 'Restart (rejoins peer channel)' },
+                    { key: 'Esc',           action: 'Engine pause overlay' },
+                ],
+                tip: '<p><b>Real multiplayer, no server required.</b></p>' +
+                     '<p><span style="color:#67e8f9">●</span> Open this page in <b>another browser tab</b> (or window) — ' +
+                     'each tab joins the same peer channel via <code>TDNet.Peer</code> (BroadcastChannel-backed).</p>' +
+                     '<p><span style="color:#4ade80">●</span> Player state (position, aim, color) is broadcast at <b>20 Hz</b>. ' +
+                     'Bullets are event-driven (spawn/hit/despawn messages). RTT is measured continuously.</p>' +
+                     '<p><span style="color:#fbbf24">●</span> The HUD shows live peer count + RTT. Same-browser latency is ' +
+                     'sub-millisecond — that\'s the engine\'s networking layer at full speed.</p>' +
+                     '<p><span style="color:#c084fc">●</span> Want internet multiplayer? Swap <code>TDNet.Peer</code> for ' +
+                     '<code>TDNet.Socket</code> — same API shape, WebSocket transport.</p>',
+            },
+        };
+
+        // =====================================================================
+        // Pick which game to load.
+        // =====================================================================
+        function getGameKey() {
+            const params = new URLSearchParams(window.location.search);
+            const g = params.get('game');
+            if (g && GAME_METADATA[g]) return g;
+            // Default to voidrunner.
+            return 'voidrunner';
+        }
+
+        const ACTIVE_GAME = getGameKey();
+        const META = GAME_METADATA[ACTIVE_GAME];
+
+        // =====================================================================
+        // Populate the picker bar.
+        // =====================================================================
+        (function populatePicker() {
+            const picker = document.getElementById('game-picker');
+            Object.keys(GAME_METADATA).forEach(function (key) {
+                const btn = document.createElement('button');
+                btn.textContent = GAME_METADATA[key].label;
+                btn.dataset.game = key;
+                if (key === ACTIVE_GAME) btn.classList.add('active');
+                btn.addEventListener('click', function () {
+                    if (key === ACTIVE_GAME) return;
+                    // Navigate to ?game=key. Using location.search keeps it on
+                    // the same path — no full reload of the host page.
+                    window.location.search = '?game=' + encodeURIComponent(key);
+                });
+                picker.appendChild(btn);
+            });
+        })();
+
+        // =====================================================================
+        // Populate the controls overlay with the active game's metadata.
+        // NOTE: document.title is intentionally NOT changed — the brand title
+        // "TD Engine - Web Player" stays constant regardless of which game is
+        // active, per user request.
+        // =====================================================================
+        (function populateControls() {
+            document.getElementById('game-title').textContent = META.title;
+            document.getElementById('game-subtitle').textContent = META.subtitle;
+            const grid = document.getElementById('controls-grid');
+            grid.innerHTML = '';
+            META.controls.forEach(function (row) {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'control-row';
+                const keySpan = document.createElement('span');
+                keySpan.className = 'key';
+                keySpan.innerHTML = row.key;
+                const actSpan = document.createElement('span');
+                actSpan.className = 'action';
+                actSpan.textContent = row.action;
+                rowDiv.appendChild(keySpan);
+                rowDiv.appendChild(actSpan);
+                grid.appendChild(rowDiv);
+            });
+            document.getElementById('controls-tip').innerHTML = META.tip;
+        })();
+
+        // =====================================================================
+        // Inject the demo script.
+        // =====================================================================
+        (function injectDemoScript() {
+            const s = document.createElement('script');
+            s.src = META.script;
+            s.async = false;  // preserve ordering relative to the inline boot script
+            document.head.appendChild(s);
+        })();
+    </script>
+
+    <script>
+        (async function () {
+            const loadingScreen    = document.getElementById('loading-screen');
+            const loadingDetail    = document.getElementById('loading-detail');
+            const progressBarFill  = document.getElementById('progress-bar-fill');
+            const controlsOverlay  = document.getElementById('controls-overlay');
+            const gameCanvas       = document.getElementById('game-canvas');
+            const fpsCounter       = document.getElementById('fps-counter');
+            const consoleOutput    = document.getElementById('console-output');
+            const engineConsole    = document.getElementById('engine-console');
+
+            // -----------------------------------------------------------------
+            // Wire engine log -> on-screen console
+            // -----------------------------------------------------------------
+            const consoleLines = [];
+            const MAX_CONSOLE_LINES = 200;
+
+            function appendConsoleLine(level, message) {
+                const div = document.createElement('div');
+                div.className = 'log-' + level;
+                const time = new Date().toLocaleTimeString();
+                div.textContent = '[' + time + '] ' + message;
+                consoleOutput.appendChild(div);
+                consoleLines.push(div);
+                if (consoleLines.length > MAX_CONSOLE_LINES) {
+                    const old = consoleLines.shift();
+                    if (old.parentNode) old.parentNode.removeChild(old);
+                }
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+            }
+
+            TDBridge.onLog(function (entry) {
+                appendConsoleLine(entry.level, entry.message);
+                // Auto-show the console ONLY for warn/error/deprecated logs.
+                // Info-level boot noise was flooding the console and covering
+                // the game canvas (200px tall, z-index 500). Users can still
+                // open the console manually via the "Console" top-bar link.
+                if (entry.level === 'warn' || entry.level === 'error' || entry.level === 'deprecated') {
+                    engineConsole.style.display = 'flex';
+                }
+            });
+
+            document.getElementById('console-close').addEventListener('click', function () {
+                engineConsole.style.display = 'none';
+            });
+
+            // Console toggle link in the top bar — flips the console open/closed.
+            (function () {
+                const link = document.getElementById('console-link');
+                if (!link) return;
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    engineConsole.style.display = (engineConsole.style.display === 'flex') ? 'none' : 'flex';
+                });
+            })();
+
+            // -----------------------------------------------------------------
+            // Boot sequence
+            // -----------------------------------------------------------------
+            loadingDetail.textContent = 'Loading WebAssembly module...';
+            progressBarFill.style.width = '20%';
+
+            TDBridge.onReady(function () {
+                loadingDetail.textContent = 'Engine ready!';
+                progressBarFill.style.width = '100%';
+
+                setTimeout(function () {
+                    loadingScreen.style.display = 'none';
+                    controlsOverlay.style.display = 'flex';
+                    gameCanvas.style.display = 'block';
+                }, 500);
+            });
+
+            try {
+                await TDBridge.init('game-canvas');
+            } catch (err) {
+                const errMsg = (err && err.message) ? err.message : String(err);
+                loadingDetail.textContent = 'Error: ' + errMsg;
+                progressBarFill.style.width = '100%';
+                progressBarFill.classList.add('error');
+                console.error('TD Engine failed to load:', err);
+                return;
+            }
+
+            // -----------------------------------------------------------------
+            // FPS counter
+            // -----------------------------------------------------------------
+            let frameCount = 0;
+            let lastFpsTime = performance.now();
+            function updateFPS() {
+                frameCount++;
+                const now = performance.now();
+                if (now - lastFpsTime >= 1000) {
+                    fpsCounter.textContent = 'FPS: ' + frameCount;
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+                requestAnimationFrame(updateFPS);
+            }
+            updateFPS();
+
+            // -----------------------------------------------------------------
+            // Start / pause UI
+            // -----------------------------------------------------------------
+            function startGame() {
+                controlsOverlay.style.display = 'none';
+                fpsCounter.style.display = 'block';
+                TDBridge.resumeAudio();
+
+                // Launch the active demo (defined in the injected script).
+                if (typeof window.startTDExample === 'function') {
+                    window.startTDExample();
+                }
+            }
+
+            document.getElementById('start-button').addEventListener('click', function (e) {
+                e.stopPropagation();
+                startGame();
+            });
+            controlsOverlay.addEventListener('click', startGame);
+
+            document.addEventListener('keydown', function (e) {
+                if (e.keyCode === 0x1B /*Escape*/) {
+                    const pause = document.getElementById('pause-overlay');
+                    pause.style.display = (pause.style.display === 'none' || !pause.style.display)
+                        ? 'flex' : 'none';
+                }
+            });
+
+            document.getElementById('resume-button').addEventListener('click', function () {
+                document.getElementById('pause-overlay').style.display = 'none';
+                TDBridge.resumeAudio();
+            });
+
+            document.getElementById('restart-button').addEventListener('click', function () {
+                document.getElementById('pause-overlay').style.display = 'none';
+                if (typeof window.restartTDExample === 'function') {
+                    window.restartTDExample();
+                }
+            });
+        })();
+    </script>
+
+    <!-- ================================================================== -->
+    <!-- Latest Release Ticker — fetches GitHub API on load + every 5 min.  -->
+    <!-- Auto-updates whenever a new bug fix / feature release is pushed.   -->
+    <!-- ================================================================== -->
+    <script>
+        (function () {
+            const REPO = 'hacvilke/td';
+            const API_URL = 'https://api.github.com/repos/' + REPO + '/releases/tags/latest';
+            const REFRESH_MS = 5 * 60 * 1000;  // 5 minutes
+
+            const contentEl = document.getElementById('release-ticker-content');
+            const linkEl = document.getElementById('release-ticker-link');
+            if (!contentEl || !linkEl) return;
+
+            // Extract the first non-empty, non-heading line from the release body
+            // and strip markdown to plain text.
+            function extractSummary(body) {
+                if (!body) return '';
+                const lines = body.split('\n');
+                for (const line of lines) {
+                    let t = line.trim();
+                    if (!t) continue;
+                    if (t.startsWith('#')) continue;          // skip markdown headings
+                    if (t.startsWith('```')) continue;        // skip code fences
+                    if (t.startsWith('-')) continue;          // skip bullet items
+                    // Strip markdown: bold **x**, italic *x*, code `x`, links [t](u) -> t
+                    t = t.replace(/\*\*(.+?)\*\*/g, '$1');
+                    t = t.replace(/\*(.+?)\*/g, '$1');
+                    t = t.replace(/`([^`]+)`/g, '$1');
+                    t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+                    return t.slice(0, 160);
+                }
+                return '';
+            }
+
+            // Render the release info into the ticker.
+            function renderRelease(release) {
+                if (!release) {
+                    contentEl.innerHTML = '<span class="ticker-error">Could not reach GitHub API</span>';
+                    return;
+                }
+                const version = release.name || release.tag_name || 'latest';
+                const published = release.published_at
+                    ? new Date(release.published_at).toLocaleDateString(
+                          undefined, { year: 'numeric', month: 'short', day: 'numeric' }
+                      )
+                    : '';
+                const summary = extractSummary(release.body);
+                const commitLine = summary
+                    ? ('<span class="ticker-body"> — ' + summary + '</span>')
+                    : '';
+                contentEl.innerHTML =
+                    '<span class="ticker-version">' + escapeHtml(version) + '</span>' +
+                    (published ? '<span class="ticker-date">' + published + '</span>' : '') +
+                    commitLine;
+                if (release.html_url) {
+                    linkEl.href = release.html_url;
+                }
+            }
+
+            function escapeHtml(s) {
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            // Fetch the release info. Cache-bust with a timestamp query param
+            // so we never get a stale CDN copy.
+            async function fetchRelease() {
+                const url = API_URL + '?_t=' + Date.now();
+                try {
+                    const r = await fetch(url, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/vnd.github+json' },
+                        cache: 'no-store',
+                    });
+                    if (!r.ok) {
+                        console.warn('[release-ticker] GitHub API returned', r.status);
+                        // Don't overwrite a previously-successful render with an error.
+                        if (!contentEl.dataset.lastOk) {
+                            contentEl.innerHTML =
+                                '<span class="ticker-error">GitHub API returned ' + r.status + '</span>';
+                        }
+                        return;
+                    }
+                    const release = await r.json();
+                    renderRelease(release);
+                    contentEl.dataset.lastOk = '1';
+                } catch (err) {
+                    console.warn('[release-ticker] fetch failed:', err);
+                    if (!contentEl.dataset.lastOk) {
+                        contentEl.innerHTML =
+                            '<span class="ticker-error">Offline — cannot reach GitHub</span>';
+                    }
+                }
+            }
+
+            // Initial fetch + recurring refresh.
+            fetchRelease();
+            setInterval(fetchRelease, REFRESH_MS);
+        })();
+    </script>
+
+    <!-- ====================================================================== -->
+    <!-- Features overlay open/close handler.                                   -->
+    <!-- ====================================================================== -->
+    <script>
+        (function () {
+            const link = document.getElementById('features-link');
+            const overlay = document.getElementById('features-overlay');
+            const closeBtn = document.getElementById('features-close');
+            if (!link || !overlay || !closeBtn) return;
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                overlay.style.display = 'flex';
+            });
+            closeBtn.addEventListener('click', function () {
+                overlay.style.display = 'none';
+            });
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) overlay.style.display = 'none';
+            });
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') overlay.style.display = 'none';
+            });
+        })();
+    </script>
+
+    <!-- ====================================================================== -->
+    <!-- Multiplayer link — opens the TDNet.ServerConfig panel.                 -->
+    <!-- ====================================================================== -->
+    <script>
+        (function () {
+            const link = document.getElementById('multiplayer-link');
+            if (!link) return;
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (window.TDNet && window.TDNet.ServerConfig) {
+                    window.TDNet.ServerConfig.openPanel();
+                } else {
+                    alert('Network module not loaded. Make sure net_websocket.js is included.');
+                }
+            });
+        })();
+    </script>
+
+    <!-- ====================================================================== -->
+    <!-- Inspector + Profiler + Error Boundary wiring.                           -->
+    <!-- ====================================================================== -->
+    <script>
+        // --- Error boundary: install early so it catches boot errors -----------
+        (function () {
+            if (!window.TDErrorBoundary) return;
+            // Defer install until DOM is ready, then capture everything.
+            function go() {
+                window.TDErrorBoundary.install({
+                    showStackTrace: true,
+                    maxStoredReports: 10,
+                    // Users can set window.__TD_ERROR_ENDPOINT__ to enable POST
+                    submitEndpoint: window.__TD_ERROR_ENDPOINT__ || null,
+                });
+            }
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', go);
+            } else { go(); }
+        })();
+
+        // --- Inspector link ----------------------------------------------------
+        (function () {
+            const link = document.getElementById('inspect-link');
+            if (!link) return;
+            let handle = null;
+            let panel = null;
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (!window.TDInspector) { alert('Inspector module not loaded.'); return; }
+                if (handle) { handle.unmount(); handle = null; if (panel && panel.parentNode) panel.parentNode.removeChild(panel); panel = null; return; }
+                panel = document.createElement('div');
+                panel.id = 'td-inspector-panel';
+                panel.style.cssText = 'position:fixed;top:60px;right:12px;width:420px;max-height:80vh;overflow:auto;background:rgba(16,18,24,0.96);color:#cfd6e4;border:1px solid #2a3346;border-radius:8px;z-index:10000;box-shadow:0 12px 32px rgba(0,0,0,0.5);font:13px/1.45 ui-monospace,Menlo,Consolas,monospace';
+                document.body.appendChild(panel);
+                handle = window.TDInspector.mount(panel, { refreshMs: 250 });
+            });
+        })();
+
+        // --- Profiler link -----------------------------------------------------
+        (function () {
+            const link = document.getElementById('profiler-link');
+            if (!link) return;
+            let handle = null;
+            let container = null;
+            let lastT = 0;
+            function rafLoop() {
+                if (!handle) return;
+                const t = performance.now();
+                if (lastT > 0) handle.frame(t - lastT);
+                lastT = t;
+                requestAnimationFrame(rafLoop);
+            }
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (!window.TDProfiler) { alert('Profiler module not loaded.'); return; }
+                if (handle) { handle.unmount(); handle = null; if (container && container.parentNode) container.parentNode.removeChild(container); container = null; lastT = 0; return; }
+                container = document.createElement('div');
+                container.id = 'td-profiler-overlay';
+                container.style.cssText = 'position:fixed;bottom:12px;left:12px;width:480px;background:rgba(8,10,16,0.92);border:1px solid #2a3346;border-radius:8px;z-index:10000;padding:8px;box-shadow:0 12px 32px rgba(0,0,0,0.5)';
+                document.body.appendChild(container);
+                handle = window.TDProfiler.mount(container, { refreshMs: 100, height: 120 });
+                // Seed common counters
+                handle.counter('drawCalls', 0);
+                requestAnimationFrame(rafLoop);
+            });
+        })();
+
+        // --- Save / Load panel -------------------------------------------------
+        (function () {
+            const link = document.getElementById('save-link');
+            if (!link) return;
+            let panel = null;
+            function fmtBytes(n) {
+                if (n < 1024) return n + ' B';
+                if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+                return (n / 1048576).toFixed(1) + ' MB';
+            }
+            function fmtTime(ts) {
+                if (!ts) return '—';
+                const d = new Date(ts);
+                return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+            }
+            function render() {
+                if (!window.TDPersistence) { panel.innerHTML = '<div style="padding:12px">Persistence module not loaded.</div>'; return; }
+                const slots = window.TDPersistence.list();
+                const snap = window.TDPersistence.snapshot();
+                let html = '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #2a3346;margin-bottom:8px">';
+                html += '<span style="font-weight:700;letter-spacing:0.08em;color:#5ce1ff">SAVE / LOAD</span>';
+                html += '<span style="color:#8a93a6;font-size:11px">' + snap.serializers.length + ' serializers registered</span>';
+                html += '<button id="td-save-now" style="margin-left:auto;background:#1a3a2a;color:#80f0a0;border:1px solid #2a5a3a;border-radius:4px;padding:4px 10px;cursor:pointer;font:11px ui-monospace,Menlo,Consolas,monospace">Save Now</button>';
+                html += '</div>';
+                html += '<div style="padding:0 10px 8px"><input id="td-save-name" type="text" placeholder="slot name (e.g. checkpoint1)" style="width:100%;background:#0d1118;color:#cfd6e4;border:1px solid #2a3346;border-radius:4px;padding:4px 8px;font:12px ui-monospace,Menlo,Consolas,monospace"></div>';
+                if (slots.length === 0) {
+                    html += '<div style="padding:8px 12px;color:#5a6478;font-style:italic">No saved games yet.</div>';
+                } else {
+                    html += '<div style="max-height:240px;overflow:auto">';
+                    slots.forEach(function (s) {
+                        html += '<div style="display:grid;grid-template-columns:1fr auto;gap:4px;padding:6px 10px;border-bottom:1px solid #1a2230">';
+                        html += '<div><div style="color:#e6ecf5;font-weight:600">' + s.name + '</div>';
+                        html += '<div style="color:#8a93a6;font-size:11px">' + fmtTime(s.timestamp) + ' &middot; ' + fmtBytes(s.sizeBytes) + ' &middot; ' + s.slotNames.length + ' slots</div></div>';
+                        html += '<div style="display:flex;gap:4px">';
+                        html += '<button data-load="' + s.name + '" style="background:#1a2230;color:#5ce1ff;border:1px solid #2a3346;border-radius:4px;padding:2px 8px;cursor:pointer;font:11px ui-monospace,Menlo,Consolas,monospace">Load</button>';
+                        html += '<button data-export="' + s.name + '" style="background:#1a2230;color:#cfd6e4;border:1px solid #2a3346;border-radius:4px;padding:2px 8px;cursor:pointer;font:11px ui-monospace,Menlo,Consolas,monospace">Export</button>';
+                        html += '<button data-delete="' + s.name + '" style="background:#2a1219;color:#e84a6b;border:1px solid #5a1f2e;border-radius:4px;padding:2px 8px;cursor:pointer;font:11px ui-monospace,Menlo,Consolas,monospace">Delete</button>';
+                        html += '</div></div>';
+                    });
+                    html += '</div>';
+                }
+                panel.innerHTML = html;
+                // Wire buttons
+                const saveBtn = panel.querySelector('#td-save-now');
+                if (saveBtn) saveBtn.addEventListener('click', function () {
+                    const nameInput = panel.querySelector('#td-save-name');
+                    const name = (nameInput && nameInput.value.trim()) || ('auto-' + Date.now());
+                    const env = window.TDPersistence.save(name);
+                    if (env) { if (nameInput) nameInput.value = ''; render(); }
+                    else alert('Save failed — see console.');
+                });
+                panel.querySelectorAll('[data-load]').forEach(function (b) {
+                    b.addEventListener('click', function () {
+                        const r = window.TDPersistence.load(b.getAttribute('data-load'));
+                        if (r.ok) alert('Loaded. Restored: ' + r.restored.join(', ') + (r.missing.length ? ' | Missing: ' + r.missing.join(', ') : ''));
+                        else alert('Load failed: ' + r.error);
+                    });
+                });
+                panel.querySelectorAll('[data-export]').forEach(function (b) {
+                    b.addEventListener('click', function () {
+                        const json = window.TDPersistence.exportJson(b.getAttribute('data-export'));
+                        if (!json) { alert('Export failed.'); return; }
+                        // Trigger download
+                        const blob = new Blob([json], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = b.getAttribute('data-export') + '.json';
+                        document.body.appendChild(a); a.click(); a.remove();
+                        URL.revokeObjectURL(url);
+                    });
+                });
+                panel.querySelectorAll('[data-delete]').forEach(function (b) {
+                    b.addEventListener('click', function () {
+                        if (confirm('Delete save "' + b.getAttribute('data-delete') + '"?')) {
+                            window.TDPersistence.delete(b.getAttribute('data-delete'));
+                            render();
+                        }
+                    });
+                });
+            }
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                if (panel && panel.parentNode) { panel.parentNode.removeChild(panel); panel = null; return; }
+                panel = document.createElement('div');
+                panel.id = 'td-save-panel';
+                panel.style.cssText = 'position:fixed;top:60px;right:12px;width:380px;max-height:80vh;overflow:auto;background:rgba(16,18,24,0.96);color:#cfd6e4;border:1px solid #2a3346;border-radius:8px;z-index:10000;box-shadow:0 12px 32px rgba(0,0,0,0.5);font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;padding-bottom:8px';
+                document.body.appendChild(panel);
+                render();
+            });
+        })();
+    </script>
+</body>
+</html>

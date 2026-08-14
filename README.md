@@ -31,9 +31,9 @@ python3 -m http.server 8000
 # open http://localhost:8000 in a browser
 ```
 
-Or just play it online: **https://hacvilke.github.io/td/**
+Or just play it online: **https://hacvilke.github.io/td/** (landing page) — or jump straight to the **[web player](https://hacvilke.github.io/td/play.html)** or the **[documentation](https://hacvilke.github.io/td/docs.html)**.
 
-The web player (`web/index.html`) loads `td-engine.wasm` and runs **VOID RUNNER**, a complete vertical space shooter written in pure JavaScript (`web/examples/voidrunner.js`) that drives the C++ engine via `TDBridge`.
+The landing page (`web/index.html`) showcases the engine and links to the web player (`web/play.html`), which loads `td-engine.wasm` and runs **VOID RUNNER**, a complete vertical space shooter written in pure JavaScript (`web/examples/voidrunner.js`) that drives the C++ engine via `TDBridge`.
 
 ## Download prebuilt Windows binaries
 
@@ -349,7 +349,9 @@ td-engine/
 │   ├── js_bridge.js         # Loads td-engine.wasm, sets up canvas + input + audio
 │   └── README.md            # Build + run instructions
 └── web/                # Browser-facing files
-    ├── index.html           # Standalone web player (with game picker + release ticker)
+    ├── index.html           # Landing page (hero, features, demo gallery)
+    ├── play.html            # Web player (game picker + 6 demos + release ticker)
+    ├── docs.html            # Documentation (API reference + guides)
     ├── style.css            # Dark theme + #00D4FF accent
     ├── GETTING_STARTED.md   # 11-section guide for web game developers
     └── examples/

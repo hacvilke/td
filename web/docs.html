@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="TD Engine documentation — getting started, API reference, module guides, self-hosting, multiplayer.">
+    <meta name="theme-color" content="#0a0e14">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>TD Engine — Documentation</title>
+    <link rel="stylesheet" href="style.css?v=23">
+    <style>
+        html, body {
+            margin: 0; padding: 0;
+            background: #0a0e14;
+            color: #cbd5e1;
+            font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+        }
+        body { padding-top: 0; }
+
+        /* Top nav (same as index.html) */
+        .td-nav {
+            position: sticky; top: 0; z-index: 50;
+            display: flex; align-items: center; gap: 16px;
+            padding: 12px 24px;
+            background: rgba(10, 14, 20, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid #1f2937;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        }
+        .td-nav .brand {
+            display: flex; align-items: center; gap: 8px;
+            font-weight: 700; color: #67e8f9;
+            letter-spacing: 0.5px;
+            font-size: 14px;
+            text-decoration: none;
+        }
+        .td-nav .brand .mark {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px;
+            color: #67e8f9;
+            filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.5));
+        }
+        .td-nav .brand .mark svg { width: 100%; height: 100%; }
+        @keyframes td-boat-rock {
+            0%, 100% { transform: rotate(-3deg); }
+            50%      { transform: rotate(3deg); }
+        }
+        .td-nav .brand .mark svg { animation: td-boat-rock 4s ease-in-out infinite; transform-origin: 50% 75%; }
+        .td-nav .links {
+            margin-left: auto;
+            display: flex; gap: 18px; align-items: center;
+            font-size: 13px;
+        }
+        .td-nav .links a {
+            color: #94a3b8;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .td-nav .links a:hover { color: #67e8f9; }
+        .td-nav .links .cta-primary {
+            background: #67e8f9;
+            color: #0a0e14;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+        .td-nav .links .cta-primary:hover { background: #8af0ff; color: #0a0e14; }
+
+        /* Layout: sidebar + content */
+        .td-docs-layout {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            max-width: 1400px;
+            margin: 0 auto;
+            min-height: calc(100vh - 60px);
+        }
+        .td-sidebar {
+            border-right: 1px solid #1f2937;
+            padding: 32px 20px;
+            position: sticky; top: 60px;
+            height: calc(100vh - 60px);
+            overflow-y: auto;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 13px;
+        }
+        .td-sidebar h4 {
+            color: #64748b;
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin: 24px 0 8px;
+            font-weight: 600;
+        }
+        .td-sidebar h4:first-child { margin-top: 0; }
+        .td-sidebar ul {
+            list-style: none;
+            padding: 0; margin: 0;
+        }
+        .td-sidebar li { margin: 0; }
+        .td-sidebar a {
+            display: block;
+            color: #94a3b8;
+            text-decoration: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            border-left: 2px solid transparent;
+            transition: all 0.1s;
+        }
+        .td-sidebar a:hover {
+            color: #67e8f9;
+            background: rgba(103, 232, 249, 0.05);
+            border-left-color: #67e8f9;
+        }
+        .td-sidebar a.active {
+            color: #67e8f9;
+            background: rgba(103, 232, 249, 0.08);
+            border-left-color: #67e8f9;
+        }
+
+        .td-content {
+            padding: 48px 56px 96px;
+            max-width: 900px;
+            min-width: 0;
+        }
+        .td-content h1 {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 36px;
+            font-weight: 800;
+            color: #e2e8f0;
+            margin: 0 0 12px;
+            letter-spacing: -0.01em;
+        }
+        .td-content h2 {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 22px;
+            font-weight: 700;
+            color: #67e8f9;
+            margin: 48px 0 12px;
+            padding-top: 24px;
+            border-top: 1px solid #1f2937;
+            letter-spacing: -0.01em;
+            scroll-margin-top: 80px;
+        }
+        .td-content h3 {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 16px;
+            font-weight: 700;
+            color: #e2e8f0;
+            margin: 28px 0 8px;
+            scroll-margin-top: 80px;
+        }
+        .td-content p {
+            margin: 0 0 14px;
+            color: #cbd5e1;
+            font-size: 14px;
+        }
+        .td-content p code, .td-content li code {
+            background: #11161e;
+            border: 1px solid #1f2937;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 12px;
+            color: #fcd34d;
+        }
+        .td-content ul, .td-content ol {
+            color: #cbd5e1;
+            font-size: 14px;
+            line-height: 1.7;
+            padding-left: 24px;
+        }
+        .td-content ul li, .td-content ol li { margin-bottom: 4px; }
+        .td-content a { color: #67e8f9; text-decoration: none; }
+        .td-content a:hover { text-decoration: underline; }
+
+        /* Code blocks */
+        .td-content pre {
+            background: #0d1118;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 16px 20px;
+            overflow-x: auto;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 12.5px;
+            line-height: 1.7;
+            color: #cbd5e1;
+            margin: 12px 0 20px;
+        }
+        .td-content pre .kw { color: #c084fc; }
+        .td-content pre .fn { color: #67e8f9; }
+        .td-content pre .str { color: #fcd34d; }
+        .td-content pre .num { color: #f87171; }
+        .td-content pre .com { color: #475569; font-style: italic; }
+        .td-content pre .prop { color: #93c5fd; }
+
+        /* Info / warn callouts */
+        .td-callout {
+            border-left: 3px solid;
+            padding: 12px 16px;
+            border-radius: 0 6px 6px 0;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+        .td-callout.info {
+            background: rgba(103, 232, 249, 0.06);
+            border-color: #67e8f9;
+            color: #a5d8f0;
+        }
+        .td-callout.warn {
+            background: rgba(252, 211, 77, 0.06);
+            border-color: #fcd34d;
+            color: #fde68a;
+        }
+        .td-callout b { color: inherit; }
+
+        /* API table */
+        .td-api-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0 24px;
+            font-size: 13px;
+        }
+        .td-api-table th, .td-api-table td {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid #1f2937;
+            vertical-align: top;
+        }
+        .td-api-table th {
+            color: #67e8f9;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+            background: #11161e;
+        }
+        .td-api-table td code {
+            background: transparent;
+            border: none;
+            padding: 0;
+            color: #93c5fd;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 12px;
+        }
+        .td-api-table td.desc { color: #94a3b8; }
+
+        /* Module cards */
+        .td-module-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 14px;
+            margin: 16px 0;
+        }
+        .td-module-grid .m {
+            background: #11161e;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .td-module-grid .m h4 {
+            margin: 0 0 6px;
+            font-family: ui-monospace, Menlo, monospace;
+            color: #67e8f9;
+            font-size: 13px;
+        }
+        .td-module-grid .m p {
+            margin: 0;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .td-module-grid .m .src {
+            display: inline-block;
+            margin-top: 8px;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 10px;
+            color: #64748b;
+            text-decoration: none;
+            border-bottom: 1px dotted #475569;
+        }
+        .td-module-grid .m .src:hover { color: #67e8f9; border-bottom-color: #67e8f9; }
+
+        @media (max-width: 800px) {
+            .td-docs-layout { grid-template-columns: 1fr; }
+            .td-sidebar { display: none; }
+            .td-content { padding: 24px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ====================================================================== -->
+<!-- Top nav                                                                 -->
+<!-- ====================================================================== -->
+<nav class="td-nav">
+    <a href="index.html" class="brand">
+        <span class="mark" aria-label="TD Engine logo">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                <rect x="17" y="4"  width="30" height="6" rx="1.5" fill="currentColor"/>
+                <rect x="29" y="4"  width="6"  height="30" rx="1.5" fill="currentColor"/>
+                <path d="M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z" fill="currentColor"/>
+                <path d="M 4 54 Q 16 51, 32 54 T 60 54" stroke="currentColor" stroke-width="2.5" fill="none" opacity="0.45"/>
+            </svg>
+        </span>
+        <span>TD ENGINE &middot; DOCS</span>
+    </a>
+    <div class="links">
+        <a href="index.html">Home</a>
+        <a href="play.html">Play</a>
+        <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
+        <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">GitHub</a>
+        <a href="play.html" class="cta-primary">Play Demos &rarr;</a>
+    </div>
+</nav>
+
+<div class="td-docs-layout">
+
+<!-- ====================================================================== -->
+<!-- Sidebar                                                                 -->
+<!-- ====================================================================== -->
+<aside class="td-sidebar">
+    <h4>Get Started</h4>
+    <ul>
+        <li><a href="#what-is-td">What is TD Engine?</a></li>
+        <li><a href="#quickstart">Quickstart (web)</a></li>
+        <li><a href="#quickstart-desktop">Quickstart (desktop)</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+    </ul>
+    <h4>Web API</h4>
+    <ul>
+        <li><a href="#api-lifecycle">Lifecycle</a></li>
+        <li><a href="#api-ecs">ECS</a></li>
+        <li><a href="#api-input">Input</a></li>
+        <li><a href="#api-beat">Beat System</a></li>
+        <li><a href="#api-script">Scripting VM</a></li>
+        <li><a href="#api-i18n">i18n</a></li>
+        <li><a href="#api-net">Networking</a></li>
+        <li><a href="#api-persist">Persistence</a></li>
+        <li><a href="#api-inspector">Inspector</a></li>
+        <li><a href="#api-profiler">Profiler</a></li>
+    </ul>
+    <h4>Guides</h4>
+    <ul>
+        <li><a href="#guide-selfhost">Self-hosting</a></li>
+        <li><a href="#guide-multiplayer">Multiplayer</a></li>
+        <li><a href="#guide-deprecated">Deprecated API tracker</a></li>
+        <li><a href="#guide-error">Error boundary</a></li>
+    </ul>
+    <h4>Reference</h4>
+    <ul>
+        <li><a href="#ref-modules">Module list</a></li>
+        <li><a href="#ref-tests">Test suite</a></li>
+        <li><a href="#ref-roadmap">Roadmap</a></li>
+    </ul>
+</aside>
+
+<!-- ====================================================================== -->
+<!-- Content                                                                 -->
+<!-- ====================================================================== -->
+<main class="td-content">
+
+<h1>TD Engine Documentation</h1>
+<p style="font-size:15px;color:#94a3b8;max-width:680px">
+    TD Engine is a portable C++17 game engine that compiles to WebAssembly.
+    The same source runs on Windows desktop and in any modern browser. This
+    page covers the JavaScript API (the layer you write game code against
+    when targeting the web), plus self-hosting and multiplayer guides.
+</p>
+
+<!-- ============ Get Started ============ -->
+<h2 id="what-is-td">What is TD Engine?</h2>
+<p>
+    TD Engine is built on a simple bet: <b>write portable C++ once, compile it to WebAssembly, ship a single ~1&nbsp;MB <code>.wasm</code> file</b>.
+    The browser provides the platform layer (canvas, audio device, input events, WebSocket).
+    The engine provides everything else &mdash; ECS, renderer, physics, audio, networking, scripting, UI toolkit, voxel world, i18n.
+</p>
+<p>
+    On Windows desktop, the same C++ source links against Win32 + OpenGL + waveOut.
+    On the web, it links against Emscripten + WebGL2 + Web Audio. There is no &quot;web port&quot; &mdash;
+    it's the same code, two platform backends.
+</p>
+<p>
+    The JavaScript layer (what you write game code against) is a thin wrapper around the C API exposed by the WASM module.
+    It uses Emscripten's <code>ccall</code> / <code>cwrap</code> to call into C++ functions like
+    <code>_td_create_entity</code>, <code>_td_entity_set_position</code>, etc.
+    The wrapper lives in <code>web/td_api.js</code> and exposes the <code>TDEngine.*</code> namespace.
+</p>
+
+<h2 id="quickstart">Quickstart (web)</h2>
+<p>
+    The fastest way to see the engine running is to open <a href="play.html">the web player</a> and pick a demo.
+    If you want to write your own game, here's the minimal pattern:
+</p>
+<pre><span class="com">// 1. Load the engine scripts in your HTML &lt;head&gt;</span>
+&lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"js_bridge.js?v=23"</span>&gt;&lt;/<span class="kw">script</span>&gt;
+&lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"td_api.js?v=23"</span>&gt;&lt;/<span class="kw">script</span>&gt;
+
+<span class="com">// 2. Boot the engine on a canvas</span>
+<span class="kw">await</span> <span class="fn">TDBridge</span>.<span class="fn">init</span>(<span class="str">'game-canvas'</span>);
+
+<span class="com">// 3. Use the modular API</span>
+<span class="kw">const</span> player = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">create</span>();
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setPosition</span>(player, <span class="num">100</span>, <span class="num">200</span>);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setSprite</span>(player, <span class="str">"ship.png"</span>);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setCollider</span>(player, <span class="num">32</span>, <span class="num">32</span>);
+
+<span class="com">// 4. Game loop — engine handles rAF + WASM render</span>
+<span class="kw">function</span> <span class="fn">update</span>() {
+  <span class="kw">if</span> (<span class="fn">TDEngine</span>.<span class="prop">input</span>.<span class="fn">isKeyDown</span>(<span class="str">'KeyA'</span>)) {
+    <span class="kw">const</span> [x, y] = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">getPosition</span>(player);
+    <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setPosition</span>(player, x - <span class="num">4</span>, y);
+  }
+  <span class="fn">requestAnimationFrame</span>(update);
+}
+<span class="fn">update</span>();</pre>
+
+<div class="td-callout info">
+    <b>What just happened:</b> &nbsp;
+    <code>TDBridge.init()</code> downloads <code>td-engine.wasm</code>, instantiates it, creates a WebGL2
+    context on your canvas, and registers the engine's <code>mainLoop</code> with <code>requestAnimationFrame</code>.
+    Once <code>await TDBridge.init()</code> resolves, you can call any <code>TDEngine.*</code> API.
+    The engine renders every frame automatically &mdash; you only need to update entity state.
+</div>
+
+<h2 id="quickstart-desktop">Quickstart (desktop)</h2>
+<p>
+    On Windows, the engine builds with CMake + MSVC (or Ninja). The same source also builds on Linux/macOS
+    with GCC/Clang, but the platform layer (<code>src/platform/win32_window.cpp</code>) is Windows-only.
+</p>
+<pre><span class="com"># Clone and configure</span>
+$ git clone https://github.com/hacvilke/td
+$ cd td
+$ cmake -B build -S .
+
+<span class="com"># Build everything (engine + editor + examples + tests)</span>
+$ cmake --build build --parallel
+
+<span class="com"># Run a demo</span>
+$ ./build/bin/pong.exe
+$ ./build/bin/platformer.exe
+$ ./build/bin/td-editor.exe
+
+<span class="com"># Run unit tests</span>
+$ cd build &amp;&amp; ctest --output-on-failure</pre>
+
+<h2 id="architecture">Architecture</h2>
+<p>
+    The engine has three layers, each one fully open-source:
+</p>
+<ol>
+    <li><b>C++ core</b> (<code>src/</code>) &mdash; 26K LOC across 16 subsystems. Pure C++17, no external dependencies. This is where the real work happens.</li>
+    <li><b>WASM platform</b> (<code>wasm/emscripten_main.cpp</code>) &mdash; exposes the C++ API as <code>extern "C"</code> functions that Emscripten exports to JavaScript.</li>
+    <li><b>JS bridge + modular API</b> (<code>web/js_bridge.js</code> + <code>web/td_api.js</code>) &mdash; wraps the C API in a clean, Godot-like namespace.</li>
+</ol>
+<p>
+    The web runtime is split into focused modules, each loaded as a separate <code>&lt;script&gt;</code> tag:
+</p>
+<ul>
+    <li><code>js_bridge.js</code> &mdash; loads WASM, manages the GL context, pipes engine logs to the on-page console</li>
+    <li><code>td_api.js</code> &mdash; the <code>TDEngine.*</code> namespace (lifecycle, ecs, input, beat, script, i18n, audio, touch, gamepad)</li>
+    <li><code>net_websocket.js</code> &mdash; <code>TDNet.Socket</code> + <code>TDNet.RPC</code> + <code>TDNet.ServerConfig</code></li>
+    <li><code>net_peer.js</code> &mdash; <code>TDNet.Peer</code> (BroadcastChannel P2P)</li>
+    <li><code>server_router.js</code> &mdash; lets users self-host the engine on their own VPN</li>
+    <li><code>deprecated_tracker.js</code> &mdash; Godot-like deprecated API warning system</li>
+    <li><code>inspector.js</code> &mdash; live ECS entity/component browser</li>
+    <li><code>profiler.js</code> &mdash; frame-time graph + counters + heap meter</li>
+    <li><code>error_boundary.js</code> &mdash; friendly crash card with stack trace</li>
+    <li><code>persistence.js</code> &mdash; save/load with game-registered serializers</li>
+</ul>
+
+<!-- ============ Web API ============ -->
+<h2 id="api-lifecycle">Lifecycle</h2>
+<p>
+    The engine has a single boot entry point and a single shutdown hook. Everything else is event-driven.
+</p>
+<table class="td-api-table">
+    <tr><th>Function</th><th class="desc">Description</th></tr>
+    <tr><td><code>TDBridge.init(canvasId)</code></td><td class="desc">Async. Downloads <code>.wasm</code>, creates GL context, starts the render loop. Resolves when the engine is ready.</td></tr>
+    <tr><td><code>TDBridge.onReady(cb)</code></td><td class="desc">Register a callback that fires once when the engine is ready.</td></tr>
+    <tr><td><code>TDBridge.onLog(cb)</code></td><td class="desc">Register a callback for engine log lines. <code>cb({level, message})</code> where level is <code>info|warn|error|deprecated</code>.</td></tr>
+    <tr><td><code>TDBridge.resumeAudio()</code></td><td class="desc">Resumes the Web Audio context (must be called from a user gesture, e.g. a click).</td></tr>
+    <tr><td><code>TDBridge.getVersion()</code></td><td class="desc">Returns the engine version string (e.g. <code>"1.0.0"</code>).</td></tr>
+</table>
+
+<h2 id="api-ecs">ECS</h2>
+<p>
+    The entity-component-system is the core of the engine. Entities are integer IDs. Components are
+    attached via setter functions. The engine renders every active sprite-carrying entity each frame.
+</p>
+<pre><span class="kw">const</span> e = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">create</span>();            <span class="com">// returns an entity ID</span>
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setPosition</span>(e, <span class="num">100</span>, <span class="num">200</span>);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setVelocity</span>(e, <span class="num">0</span>, <span class="num">-50</span>);          <span class="com">// pixels per second</span>
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setSprite</span>(e, <span class="str">"ship.png"</span>);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setCollider</span>(e, <span class="num">32</span>, <span class="num">32</span>);           <span class="com">// w, h in pixels</span>
+
+<span class="kw">const</span> [x, y] = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">getPosition</span>(e);  <span class="com">// only getter exposed</span>
+
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">isValid</span>(e);                     <span class="com">// false after destroy()</span>
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">destroy</span>(e);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">count</span>();                          <span class="com">// active entity count</span></pre>
+<div class="td-callout warn">
+    <b>Known limitation:</b> &nbsp;
+    The C++ ECS API currently exposes only a position getter. Velocity, sprite, and collider
+    are write-only from JS. This is why the inspector shows entities + positions but not full
+    component state &mdash; and why persistence uses game-registered serializers instead of
+    auto-serializing the ECS. Exposing more getters is on the roadmap.
+</div>
+
+<h2 id="api-input">Input</h2>
+<p>
+    Keyboard, mouse, touch, and gamepad are all unified under <code>TDEngine.input</code>. State is polled
+    (not event-based) so you can read it any time inside your game loop.
+</p>
+<table class="td-api-table">
+    <tr><th>Function</th><th class="desc">Description</th></tr>
+    <tr><td><code>input.isKeyDown(code)</code></td><td class="desc"><code>code</code> is a KeyboardEvent.code string (<code>'KeyA'</code>, <code>'ArrowLeft'</code>, <code>'Space'</code>). Returns bool.</td></tr>
+    <tr><td><code>input.isMouseDown(button)</code></td><td class="desc"><code>button</code> is 0 (left), 1 (middle), 2 (right). Returns bool.</td></tr>
+    <tr><td><code>input.getMousePos()</code></td><td class="desc">Returns <code>[x, y]</code> in canvas pixels.</td></tr>
+    <tr><td><code>input.touchCount()</code></td><td class="desc">Number of active touch points.</td></tr>
+    <tr><td><code>input.touchX(i) / touchY(i)</code></td><td class="desc">Position of touch point <code>i</code>.</td></tr>
+    <tr><td><code>input.touchPinchScale()</code></td><td class="desc">Pinch-to-zoom scale factor relative to touch-start.</td></tr>
+    <tr><td><code>input.gamepadButtonPressed(i)</code></td><td class="desc">Standard Gamepad button state.</td></tr>
+    <tr><td><code>input.gamepadAxis(i)</code></td><td class="desc">Returns <code>[x, y]</code> of the left analog stick, normalized to [-1, 1].</td></tr>
+</table>
+
+<h2 id="api-beat">Beat System</h2>
+<p>
+    The beat system drives rhythm-game mechanics. It schedules callbacks on a fixed BPM grid and
+    tracks combos for on-beat hits.
+</p>
+<pre><span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">setBpm</span>(<span class="num">100</span>);
+<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">start</span>();
+
+<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">onBeat</span>(<span class="kw">function</span>(beatCount) {
+  <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">"beat #"</span> + beatCount);
+});
+
+<span class="com">// In a keydown handler:</span>
+<span class="kw">if</span> (<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">isOnBeat</span>(<span class="num">0.15</span>)) {  <span class="com">// 150ms tolerance window</span>
+  <span class="kw">const</span> combo = <span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">registerHit</span>();
+  <span class="kw">const</span> bonus = <span class="num">100</span> + combo * <span class="num">10</span>;
+}</pre>
+
+<h2 id="api-script">Scripting VM</h2>
+<p>
+    The engine ships with a custom Lua-like bytecode interpreter (3,075 LOC of C++).
+    Scripts are compiled at runtime from source strings and can call back into C++ functions.
+</p>
+<pre><span class="kw">const</span> src = <span class="str">`
+  fn spawn_burst(x, y) {
+    emit particles at x, y with color = palette[current]
+  }
+  fn toggle_gravity() { gravity = !gravity }
+`</span>;
+
+<span class="kw">const</span> handle = <span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">load</span>(src);
+<span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">call</span>(handle, <span class="str">"spawn_burst"</span>, <span class="num">100</span>, <span class="num">200</span>);
+<span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">unload</span>(handle);</pre>
+
+<h2 id="api-i18n">i18n</h2>
+<p>
+    Load locale tables (JSON-like) into the engine, then look up strings by key. Arabic flips to RTL automatically.
+</p>
+<pre><span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">load</span>(<span class="str">'en'</span>, { play: <span class="str">'Play'</span>, quit: <span class="str">'Quit'</span> });
+<span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">load</span>(<span class="str">'ar'</span>, { play: <span class="str">'العب'</span>, quit: <span class="str">'اخرج'</span> });
+<span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">setLocale</span>(<span class="str">'ar'</span>);
+
+<span class="kw">const</span> s = <span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">t</span>(<span class="str">'play'</span>);  <span class="com">// 'العب'</span>
+<span class="kw">const</span> rtl = <span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">isRtl</span>();       <span class="com">// true</span></pre>
+
+<h2 id="api-net">Networking</h2>
+<p>
+    Two transports, same API shape:
+</p>
+<ul>
+    <li><b><code>TDNet.Socket</code></b> &mdash; WebSocket transport for internet multiplayer. Requires a server (a 50-line Node.js script is enough; the wire format matches the C++ RpcServer).</li>
+    <li><b><code>TDNet.Peer</code></b> &mdash; BroadcastChannel transport for cross-tab multiplayer. No server needed. Sub-millisecond latency. Works in all modern browsers.</li>
+</ul>
+<pre><span class="com">// P2P — open this page in 2+ tabs</span>
+<span class="kw">const</span> peer = <span class="kw">new</span> <span class="fn">TDNet</span>.<span class="prop">Peer</span>.<span class="fn">join</span>(<span class="str">'arena-1'</span>);
+
+peer.<span class="fn">onPeerJoin</span>(p =&gt; <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">'joined:'</span>, p.id));
+peer.<span class="fn">onMessage</span>((from, msg) =&gt; <span class="kw">console</span>.<span class="fn">log</span>(msg));
+peer.<span class="fn">onPeerLeave</span>(p =&gt; <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">'left:'</span>, p.id));
+
+peer.<span class="fn">send</span>({ kind: <span class="str">'pos'</span>, x: <span class="num">100</span>, y: <span class="num">200</span> });       <span class="com">// broadcast</span>
+peer.<span class="fn">sendTo</span>(peerId, { kind: <span class="str">'shoot'</span> });              <span class="com">// directed</span>
+
+<span class="kw">const</span> rtt = peer.<span class="fn">rtt</span>();  <span class="com">// milliseconds, measured via ping/pong</span></pre>
+<pre><span class="com">// Internet — point at your own WebSocket server</span>
+<span class="kw">const</span> sock = <span class="kw">new</span> <span class="fn">TDNet</span>.<span class="prop">Socket</span>.<span class="fn">connect</span>(<span class="str">'wss://your.server/td'</span>);
+
+sock.<span class="fn">onMessage</span>(msg =&gt; <span class="kw">console</span>.<span class="fn">log</span>(msg));
+sock.<span class="fn">send</span>({ kind: <span class="str">'hello'</span> });
+
+<span class="com">// RPC — async call/result, like JSON-RPC</span>
+<span class="kw">const</span> result = <span class="kw">await</span> sock.<span class="fn">rpc</span>(<span class="str">'getLeaderboard'</span>, { game: <span class="str">'pong'</span> });</pre>
+
+<h2 id="api-persist">Persistence</h2>
+<p>
+    Web games lose everything on F5. The persistence module fixes that with localStorage-backed
+    save slots and game-registered serializers. You decide what to save &mdash; the engine won't
+    auto-serialize the ECS (because most state isn't exposed via getters).
+</p>
+<pre><span class="com">// Register a serializer for your game state</span>
+<span class="fn">TDPersistence</span>.<span class="fn">registerSerializer</span>(<span class="str">'player'</span>, {
+  save: () =&gt; ({ x: playerX, y: playerY, hp: playerHP }),
+  load: (data) =&gt; { playerX = data.x; playerY = data.y; playerHP = data.hp; }
+});
+
+<span class="com">// Save to a named slot</span>
+<span class="fn">TDPersistence</span>.<span class="fn">save</span>(<span class="str">'checkpoint-1'</span>);
+
+<span class="com">// Load it back later (or on next page load)</span>
+<span class="kw">const</span> result = <span class="fn">TDPersistence</span>.<span class="fn">load</span>(<span class="str">'checkpoint-1'</span>);
+<span class="kw">if</span> (result.ok) <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">'restored:'</span>, result.restored);
+
+<span class="com">// Autosave every 30 seconds</span>
+<span class="kw">const</span> handle = <span class="fn">TDPersistence</span>.<span class="fn">autosave</span>(<span class="str">'auto'</span>, <span class="num">30000</span>);
+handle.<span class="fn">stop</span>();  <span class="com">// stop autosaving</span>
+
+<span class="com">// Export to a .json file (shareable)</span>
+<span class="kw">const</span> json = <span class="fn">TDPersistence</span>.<span class="fn">exportJson</span>(<span class="str">'checkpoint-1'</span>);
+<span class="fn">TDPersistence</span>.<span class="fn">importJson</span>(json);  <span class="com">// round-trip</span></pre>
+
+<h2 id="api-inspector">Inspector</h2>
+<p>
+    Click &quot;Inspect&quot; in the top bar of the web player to open a live ECS browser. It auto-refreshes at 4&nbsp;Hz
+    and shows every active entity, its ID, and its position. Useful for debugging &quot;why isn't my sprite showing&quot;.
+</p>
+<pre><span class="com">// Programmatic API (for headless testing or custom UI)</span>
+<span class="kw">const</span> snap = <span class="fn">TDInspector</span>.<span class="fn">snapshot</span>();
+<span class="kw">console</span>.<span class="fn">log</span>(snap.entityCount, snap.entities);
+
+<span class="com">// Mount into your own container</span>
+<span class="kw">const</span> handle = <span class="fn">TDInspector</span>.<span class="fn">mount</span>(containerEl, { refreshMs: <span class="num">250</span> });
+handle.<span class="fn">unmount</span>();</pre>
+
+<h2 id="api-profiler">Profiler</h2>
+<p>
+    Click &quot;Profiler&quot; in the top bar to open a rolling frame-time graph. It draws 60 FPS and 30 FPS budget
+    lines, named counters, vertical markers (for events like &quot;scene load&quot;), and a WASM/JS heap meter.
+</p>
+<pre><span class="kw">const</span> handle = <span class="fn">TDProfiler</span>.<span class="fn">mount</span>(containerEl, { refreshMs: <span class="num">100</span> });
+
+<span class="com">// In your game loop:</span>
+handle.<span class="fn">frame</span>(deltaMs);
+handle.<span class="fn">counter</span>(<span class="str">'drawCalls'</span>, drawCallCount);
+handle.<span class="fn">increment</span>(<span class="str">'spawns'</span>);
+handle.<span class="fn">mark</span>(<span class="str">'scene-load'</span>);
+
+handle.<span class="fn">unmount</span>();</pre>
+
+<!-- ============ Guides ============ -->
+<h2 id="guide-selfhost">Self-hosting</h2>
+<p>
+    The entire engine is a static <code>.wasm</code> file plus JS glue. Drop the <code>web/</code> folder on any static host:
+    GitHub Pages, your VPS, a CDN, an intranet, even a USB stick.
+</p>
+<p>
+    To load the engine from a different origin (e.g. your VPN), add <code>?server=&lt;URL&gt;</code> to the page URL:
+</p>
+<pre>https://your.site/td/play.html?server=https://vpn.example.com/td/</pre>
+<p>
+    The <code>server_router.js</code> module rewrites all asset URLs (<code>td-engine.wasm</code>, <code>js_bridge.js</code>,
+    <code>style.css</code>, anything under <code>examples/</code>) to point at the custom server. No recompile, no config file.
+</p>
+<div class="td-callout info">
+    <b>Why this matters:</b> &nbsp; Some schools, offices, and countries block GitHub Pages. The server router
+    lets you mirror the engine on a host your users can actually reach &mdash; without forking the code or
+    maintaining a build pipeline.
+</div>
+
+<h2 id="guide-multiplayer">Multiplayer</h2>
+<p>
+    Two ways to do multiplayer, depending on whether your players are on the same browser or across the internet:
+</p>
+<h3>Same-browser (P2P via BroadcastChannel)</h3>
+<p>
+    Use <code>TDNet.Peer</code>. Open the page in 2+ tabs &mdash; each tab is a player. The browser handles the transport
+    via BroadcastChannel, so there's no server to run. Latency is sub-millisecond.
+</p>
+<p>
+    This is what the <a href="play.html?game=net2">NET ARENA 2 demo</a> uses. Open that page in two tabs and shoot each other.
+</p>
+<h3>Internet (WebSocket server)</h3>
+<p>
+    Use <code>TDNet.Socket</code>. You need a WebSocket server that speaks the engine's wire format
+    (JSON envelopes with <code>{kind, from, to, payload}</code>). A 50-line Node.js server is enough.
+</p>
+<pre><span class="com">// server.js — minimal TD engine WebSocket relay</span>
+<span class="kw">const</span> WebSocket = <span class="fn">require</span>(<span class="str">'ws'</span>);
+<span class="kw">const</span> wss = <span class="kw">new</span> <span class="fn">WebSocket.Server</span>({ port: <span class="num">8080</span> });
+<span class="kw">const</span> clients = <span class="kw">new</span> <span class="fn">Set</span>();
+
+wss.<span class="fn">on</span>(<span class="str">'connection'</span>, ws =&gt; {
+  clients.<span class="fn">add</span>(ws);
+  ws.<span class="fn">on</span>(<span class="str">'message'</span>, msg =&gt; {
+    <span class="com">// Broadcast to every other client</span>
+    <span class="kw">for</span> (<span class="kw">const</span> c <span class="kw">of</span> clients) {
+      <span class="kw">if</span> (c !== ws &amp;&amp; c.readyState === WebSocket.OPEN) c.<span class="fn">send</span>(msg);
+    }
+  });
+  ws.<span class="fn">on</span>(<span class="str">'close'</span>, () =&gt; clients.<span class="fn">delete</span>(ws));
+});</pre>
+<p>
+    Then in the browser: <code>TDNet.Socket.connect('wss://your.server:8080')</code>. Same API as <code>TDNet.Peer</code> &mdash;
+    <code>send</code>, <code>sendTo</code>, <code>onMessage</code>, <code>rpc</code>.
+</p>
+
+<h2 id="guide-deprecated">Deprecated API tracker</h2>
+<p>
+    When you change an API, mark the old one deprecated instead of removing it. The tracker will
+    surface a one-time warning in the on-page console (with a purple &quot;Deprecated&quot; filter tab)
+    the first time each deprecated function is called.
+</p>
+<pre><span class="com">// In your game code (before you remove an old function):</span>
+<span class="fn">TDDeprecated</span>.<span class="fn">warn</span>(<span class="str">'oldSpawnFunction'</span>, <span class="str">'v1.2'</span>, <span class="str">'use TDEngine.ecs.create() instead'</span>);</pre>
+
+<h2 id="guide-error">Error boundary</h2>
+<p>
+    WASM crashes used to show &quot;TD Engine failed to load&quot; with no stack. The error boundary now catches
+    <code>window.onerror</code> + <code>unhandledrejection</code> and shows a friendly crash card with the
+    stack trace, metadata (browser, engine version), and Submit/Reload/Dismiss buttons. Reports are
+    saved to localStorage (last 10).
+</p>
+<pre><span class="com">// Programmatic API (for testing or custom error reporting):</span>
+<span class="fn">TDErrorBoundary</span>.<span class="fn">report</span>(err, { context: <span class="str">'scene-load'</span> });
+
+<span class="com">// Install with a custom endpoint to receive error reports:</span>
+window.__TD_ERROR_ENDPOINT__ = <span class="str">'https://your.server/errors'</span>;
+<span class="fn">TDErrorBoundary</span>.<span class="fn">install</span>({ submitEndpoint: window.__TD_ERROR_ENDPOINT__ });</pre>
+
+<!-- ============ Reference ============ -->
+<h2 id="ref-modules">Module list</h2>
+<p>
+    10 web modules, all pure-JS IIFEs, no external dependencies. Loaded additively &mdash;
+    the engine boots even if every module is missing.
+</p>
+<div class="td-module-grid">
+    <div class="m">
+        <h4>js_bridge.js</h4>
+        <p>Loads td-engine.wasm, manages GL context, pipes engine logs.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/wasm/js_bridge.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>td_api.js</h4>
+        <p>The TDEngine.* namespace. Lifecycle, ecs, input, beat, script, i18n, audio, touch, gamepad.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/td_api.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>net_websocket.js</h4>
+        <p>TDNet.Socket + RPC + ServerConfig. WebSocket transport for internet multiplayer.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/net_websocket.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>net_peer.js</h4>
+        <p>TDNet.Peer. BroadcastChannel P2P transport for cross-tab multiplayer.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/net_peer.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>server_router.js</h4>
+        <p>Lets users self-host the engine via ?server=&lt;URL&gt;. Patches createElement + setAttribute.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/server_router.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>deprecated_tracker.js</h4>
+        <p>Godot-like deprecated API warnings. Adds a purple &quot;Deprecated&quot; tab to the on-page console.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/deprecated_tracker.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>inspector.js</h4>
+        <p>Live ECS entity/component browser. 4 Hz auto-refresh. snapshot() for headless tests.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/inspector.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>profiler.js</h4>
+        <p>Rolling frame-time graph. 60/30 FPS budget lines. Named counters. Heap meter.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/profiler.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>error_boundary.js</h4>
+        <p>Friendly crash card. Catches onerror + unhandledrejection. localStorage report storage.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/error_boundary.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>persistence.js</h4>
+        <p>Save/load with game-registered serializers. Named slots. Autosave. JSON export/import.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/persistence.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+</div>
+
+<h2 id="ref-tests">Test suite</h2>
+<p>
+    655 tests across 5 web test suites + 9 C++ test executables. All run on every push via GitHub Actions.
+</p>
+<table class="td-api-table">
+    <tr><th>Suite</th><th class="desc">Tests</th><th class="desc">Covers</th></tr>
+    <tr><td><code>test_web_modules.js</code></td><td>80</td><td class="desc">TDEngine API surface, lifecycle, ecs, input, i18n, server_router, deprecated</td></tr>
+    <tr><td><code>test_net_websocket.js</code></td><td>28</td><td class="desc">TDNet.Socket, RPC, ServerConfig, message queueing, reconnect</td></tr>
+    <tr><td><code>test_editor_modules.js</code></td><td>78</td><td class="desc">Inspector, Profiler, ErrorBoundary (snapshot, mount/unmount, report)</td></tr>
+    <tr><td><code>test_persistence.js</code></td><td>80</td><td class="desc">RegisterSerializer, save/load, list/delete, export/import, autosave, errors</td></tr>
+    <tr><td><code>test_net_peer.js</code></td><td>41</td><td class="desc">TDNet.Peer discovery, broadcast, directed msg, RTT, stale sweep, 3-peer mesh</td></tr>
+    <tr><td>C++ tests</td><td>348</td><td class="desc">math, ecs, physics, world_init, slot_leak, ui, voxel, net, character_controller</td></tr>
+</table>
+
+<h2 id="ref-roadmap">Roadmap</h2>
+<p>
+    The full implementation status of every subsystem (shipped vs. skeleton vs. TODO) is tracked in
+    <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener"><b>MODULARITY_ROADMAP.md</b></a>.
+    That document is the source of truth for what works, what's a stub, and what's planned next.
+</p>
+<p>
+    Highlights still on the roadmap:
+</p>
+<ul>
+    <li>Expose more C++ ECS getters (velocity, sprite, collider) so the inspector can show full state</li>
+    <li>Real Lua VM (currently a custom tdscript VM) for industry-standard scripting</li>
+    <li>Visual shader graph UI (the C++ codegen exists; the editor UI does not)</li>
+    <li>Voxel mesher UI (the engine has greedy meshing; no in-engine editor to paint voxels)</li>
+    <li>Plugin ABI (GDExtension-equivalent C ABI with hot reload)</li>
+    <li>WebGPU backend (Dawn/wgpu bindings TODO; currently WebGL2 only)</li>
+</ul>
+
+</main>
+</div>
+
+<script>
+    // Highlight the active sidebar link based on scroll position.
+    (function () {
+        const links = document.querySelectorAll('.td-sidebar a');
+        const sections = [];
+        links.forEach(l => {
+            const id = l.getAttribute('href').slice(1);
+            const el = document.getElementById(id);
+            if (el) sections.push({ link: l, el: el });
+        });
+        function update() {
+            const scrollY = window.scrollY + 100;
+            let active = sections[0];
+            for (const s of sections) {
+                if (s.el.offsetTop <= scrollY) active = s;
+            }
+            links.forEach(l => l.classList.remove('active'));
+            if (active) active.link.classList.add('active');
+        }
+        window.addEventListener('scroll', update, { passive: true });
+        update();
+    })();
+</script>
+
+</body>
+</html>

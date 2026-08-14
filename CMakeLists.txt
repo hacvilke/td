@@ -172,16 +172,26 @@ else()
     add_library(td-engine STATIC ${ENGINE_PORTABLE_SOURCES} ${PLATFORM_SOURCES})
     target_include_directories(td-engine PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
+    # find_package(Threads) is REQUIRED unconditionally because test_net
+    # links `Threads::Threads` regardless of platform. On Windows / MSVC,
+    # std::thread lives in the C++ runtime (vcruntime/libcpmt), so the
+    # FindThreads module creates an empty IMPORTED target — no extra libs
+    # are added. Calling this only inside `else()` (the previous setup)
+    # left `Threads::Threads` undefined on Windows, breaking the MSVC
+    # configure step (CMake Error at CMakeLists.txt:263).
+    find_package(Threads REQUIRED)
+
     if(WIN32)
         target_link_libraries(td-engine PUBLIC
+            Threads::Threads
             opengl32 gdi32 user32 winmm
         )
         target_compile_definitions(td-engine PUBLIC WIN32 _WINDOWS)
     else()
-        find_package(Threads REQUIRED)
         find_package(OpenGL REQUIRED)
         target_link_libraries(td-engine PUBLIC
-            ${CMAKE_THREAD_LIBS_INIT} OpenGL::GL
+            Threads::Threads
+            OpenGL::GL
         )
     endif()
 

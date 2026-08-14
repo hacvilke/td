@@ -290,9 +290,10 @@ hard-resetting on loop detection.
   and `js_bridge.js` forwards those logs to `console.log`/`console.warn`/
   `console.error` with a `[TD]` prefix.
 
-- **The on-screen console.** `web/index.html` has a hidden `#engine-console`
-  div that mirrors the engine's log output. Uncomment the CSS rule for
-  `#engine-console` to make it visible.
+- **The on-screen console.** `web/play.html` has a hidden `#engine-console`
+  div that mirrors the engine's log output. It auto-shows only on warn/error/
+  deprecated logs (info-level boot noise is suppressed to avoid covering the
+  game canvas). Click the "Console" link in the top bar to toggle it manually.
 
 - **Check the engine version.** `TDBridge.wasmExports.cwrap('td_get_version', 'string')()`
   should return `"TD Engine 1.0.0 (WebAssembly)"`.
