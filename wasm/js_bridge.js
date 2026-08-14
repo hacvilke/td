@@ -239,10 +239,28 @@
     _waitForRuntime(Module) {
       return new Promise((resolve, reject) => {
         const start = performance.now();
+        let triedManualRun = false;
         const check = () => {
           if (Module.asm && Module.calledRun) {
             resolve();
-          } else if (performance.now() - start > 20000) {
+            return;
+          }
+          // Failsafe: if WASM has compiled (Module.asm set) but calledRun
+          // is still false after 5s, Emscripten's auto-run likely failed
+          // silently (e.g. an exception was swallowed during bootstrap).
+          // Try invoking Module._main() manually once.
+          if (!triedManualRun && Module.asm && typeof Module._main === 'function'
+              && performance.now() - start > 5000) {
+            triedManualRun = true;
+            try {
+              this._emitLog('warn', 'Emscripten auto-run did not complete; calling Module._main() manually');
+              Module.calledRun = true;
+              Module._main();
+            } catch (e) {
+              this._emitLog('error', 'Manual Module._main() threw: ' + (e && e.message || e));
+            }
+          }
+          if (performance.now() - start > 20000) {
             reject(new Error('Timed out waiting for Emscripten runtime'));
           } else {
             setTimeout(check, 30);
