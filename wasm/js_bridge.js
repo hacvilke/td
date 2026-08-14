@@ -214,12 +214,14 @@
           script.onerror = () => reject(new Error('Failed to load td-engine.js'));
           document.body.appendChild(script);
         } else {
-          // Script tag already present - poll for Module readiness. The glue
-          // merges our global.Module config on parse, then sets .asm after
-          // WASM compilation finishes.
+          // Script tag already present - poll for Module readiness. We use
+          // typeof Module._main === 'function' as the readiness signal
+          // (it's set by Emscripten's assignWasmExports after WASM compiles).
+          // Previously polled Module.asm, but modern Emscripten (3.1.74+)
+          // attaches exports directly to Module, not to a .asm subobject.
           const start = performance.now();
           const poll = () => {
-            if (global.Module && global.Module.asm) {
+            if (global.Module && typeof global.Module._main === 'function') {
               resolve(global.Module);
             } else if (performance.now() - start > 15000) {
               reject(new Error('Timed out waiting for Emscripten Module'));
@@ -247,7 +249,11 @@
       return new Promise((resolve, reject) => {
         const start = performance.now();
         const check = () => {
-          if (this._runtimeReady && Module && Module.asm) {
+          // Modern Emscripten (3.1.74+) attaches WASM exports directly to
+          // Module (not to Module.asm). The canonical readiness signals are:
+          //   1. onRuntimeInitialized fired  -> this._runtimeReady == true
+          //   2. WASM exports are callable   -> typeof Module._main == 'function'
+          if (this._runtimeReady && Module && typeof Module._main === 'function') {
             resolve();
             return;
           }
@@ -255,7 +261,6 @@
             reject(new Error(
               'Timed out waiting for Emscripten runtime' +
               ' (ready=' + this._runtimeReady +
-              ', asm=' + (Module && !!Module.asm) +
               ', _main=' + (Module && typeof Module._main) + ')'
             ));
           } else {
