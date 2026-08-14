@@ -60,7 +60,8 @@ implementation code + ~3,400 lines of tests across 9 new modules.
 | Web modules (server router + deprecated + TDEngine API) | tests/test_web_modules.js | 80 | 80/80 (100%) |
 | Web network module (Socket + RPC + ServerConfig) | tests/test_net_websocket.js | 28 | 28/28 (100%) |
 | Web editor modules (Inspector + Profiler + ErrorBoundary) | tests/test_editor_modules.js | 78 | 78/78 (100%) |
-| **Totals** | | **534** | **529/534 (99.1%)** |
+| Web persistence module (Save/Load/Autosave) | tests/test_persistence.js | 80 | 80/80 (100%) |
+| **Totals** | | **614** | **609/614 (99.2%)** |
 
 The 5 failing tests are: 3 in net's 256KB fragmentation stress test
 (an edge case in fragment reassembly), 1 in shader graph link dedup (a
@@ -125,6 +126,47 @@ All three modules follow the established pattern:
   Node via vm sandbox with a fake DOM, or in a browser).
 
 Test totals after Wave 4: **534 tests, 529 passing (99.1%)**.
+
+### Wave 4b — Persistence (v=22, save / load / autosave)
+
+Wave 4b addresses the #1 web-engine gap: web games lose everything on F5.
+`web/persistence.js` (TDPersistence) gives games refresh-proof state via
+localStorage-backed save slots with named serializers.
+
+Why game-registered serializers (not auto-serialize ECS):
+The engine has setters for position/velocity/sprite/collider but only a
+getter for position. Auto-serializing ECS would silently lose most state.
+Games know their own state shape — let them own serialization, the engine
+handles slot management, versioning, autosave, export/import.
+
+API:
+
+```
+TDPersistence.registerSerializer(name, serializeFn, deserializeFn)
+TDPersistence.unregisterSerializer(name)
+TDPersistence.save(slotName)              → envelope or null
+TDPersistence.load(slotName)              → { ok, restored, missing, error? }
+TDPersistence.list()                       → [{ name, timestamp, sizeBytes, slotNames, version }]
+TDPersistence.delete(slotName)             → bool
+TDPersistence.exportJson(slotName)         → pretty JSON string or null
+TDPersistence.importJson(json, slotName)   → bool
+TDPersistence.autosave(slotName, ms)       → handle with .stop()
+TDPersistence.stopAllAutosaves()
+TDPersistence.clearAll()                   → count
+TDPersistence.snapshot()                   → { serializers, slots, autosaves }
+```
+
+Storage envelope is versioned (`version: 1`) for forward compatibility.
+Falls back to in-memory Map if localStorage is unavailable.
+
+Top bar gets a "Save" link that opens a panel listing all save slots with
+Load / Export / Delete buttons and a "Save Now" button that writes to a
+named slot. Export downloads the envelope as a `.json` file (for backup
+or sharing save files between players).
+
+80 new tests in `tests/test_persistence.js` (100% pass rate, runs in Node
+via vm sandbox with fake localStorage). Test totals after Wave 4b:
+**614 tests, 609 passing (99.2%)**.
 
 Also shipped alongside the gauntlets:
 - **Component slot leak fix** — `World::removeComponent<T>()` now does a

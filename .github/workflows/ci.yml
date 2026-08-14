@@ -36,6 +36,8 @@ jobs:
           node tests/test_net_websocket.js
           echo "=== test_editor_modules.js ==="
           node tests/test_editor_modules.js
+          echo "=== test_persistence.js ==="
+          node tests/test_persistence.js
 
   wasm:
     name: Build WebAssembly
