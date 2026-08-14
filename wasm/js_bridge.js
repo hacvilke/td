@@ -127,10 +127,40 @@
       await this._waitForRuntime(Module);
 
       this.wasmExports = Module;
-      // Recover the GL context Emscripten created, for any bridge-side
-      // GL work (inspector overlays, etc.). Currently unused but kept
-      // available for downstream consumers.
-      this.gl = canvas.getContext('webgl2');
+
+      // ---- Create + register the WebGL2 context with Emscripten's GL lib --
+      // Emscripten does NOT lazily create a GL context on the first GL call.
+      // The C++ engine code (td_init -> glGetString) expects a current GL
+      // context to already exist. We must explicitly create one via
+      // Module.GL.createContext() and make it current via
+      // Module.GL.makeContextCurrent(). This populates GL.currentContext
+      // and GL.contexts, so Emscripten's GL stubs (glGetString, glViewport,
+      // etc.) can dispatch to the real WebGL2 context.
+      const GL = Module.GL;
+      if (!GL || typeof GL.createContext !== 'function') {
+        throw new Error('Emscripten GL library not available on Module');
+      }
+      const ctxHandle = GL.createContext(canvas, {
+        majorVersion: 2,
+        minorVersion: 0,
+        alpha: false,
+        antialias: true,
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: false,
+        powerPreference: 'high-performance',
+        enableExtensionsByDefault: true,
+        depth: true,
+        stencil: false,
+      });
+      if (!ctxHandle) {
+        throw new Error('Failed to create WebGL2 context via Emscripten GL.createContext');
+      }
+      GL.makeContextCurrent(ctxHandle);
+      this._glContextHandle = ctxHandle;
+      this.gl = GL.getContext(ctxHandle)
+        ? GL.getContext(ctxHandle).GLctx
+        : canvas.getContext('webgl2');
+      this._emitLog('info', 'WebGL2 context registered with Emscripten GL library');
 
       // ---- Wire browser input -> WASM --------------------------------------
       this._setupBrowserInput();
