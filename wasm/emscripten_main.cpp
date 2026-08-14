@@ -51,6 +51,11 @@
 #include "../src/ecs/component.h"          // PositionComponent, SpriteComponent, ...
 #include "../src/ecs/system.h"            // BeatSystem
 #include "../src/audio/mixer.h"            // td::Mixer
+#include "../src/scripting/script_vm.h"        // td::ScriptVM (tdscript)
+#include "../src/scripting/script_vm_internal.h" // script::loadScriptFromSource
+#include "../src/core/i18n.h"                 // td::i18n (locale tables)
+#include "../src/platform/xr_input.h"         // TouchManager, GamepadManager
+#include "../src/renderer/shader_graph.h"     // td::shader_graph::compile
 
 // =============================================================================
 // Global state. Held for the lifetime of the WASM module. Emscripten's main
@@ -804,8 +809,8 @@ void td_render_frame()
 // =============================================================================
 
 // --- Scripting VM (tdscript) ------------------------------------------------
-#include "../src/scripting/script_vm.h"
-#include "../src/scripting/script_vm_internal.h"
+// (headers moved to top of file — they pull in C++ stdlib templates that
+//  cannot live inside an extern "C" block.)
 
 // Load a tdscript source string and return a script handle (id >= 0 on
 // success, -1 on failure). The handle is opaque to JS.
@@ -879,7 +884,8 @@ void td_script_unload(int handle)
 }
 
 // --- i18n / Localization -----------------------------------------------------
-#include "../src/core/i18n.h"
+// (header moved to top of file — pulls in <algorithm>, <cctype> which break
+//  under extern "C" linkage.)
 
 EMSCRIPTEN_KEEPALIVE
 void td_i18n_load(const char* localeStr, const char* json)
@@ -912,7 +918,8 @@ int td_i18n_is_rtl()
 }
 
 // --- Touch + Gamepad ---------------------------------------------------------
-#include "../src/platform/xr_input.h"
+// (header moved to top of file — pulls in <array>, <cmath> which break
+//  under extern "C" linkage.)
 
 static td::input::TouchManager g_touch;
 static td::input::GamepadManager g_gamepads;
@@ -1004,7 +1011,8 @@ float td_gamepad_axis(int idx, int axis)
 }
 
 // --- Visual Shader Graph (compile to GLSL, return string) -------------------
-#include "../src/renderer/shader_graph.h"
+// (header moved to top of file — pulls in C++ stdlib that breaks under
+//  extern "C" linkage.)
 
 EMSCRIPTEN_KEEPALIVE
 const char* td_shader_graph_compile(int nodeCount)
