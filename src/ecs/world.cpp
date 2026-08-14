@@ -30,6 +30,12 @@ DECL_COMPONENT_SPECIALIZATION(AudioSourceComponent)
 DECL_COMPONENT_SPECIALIZATION(ScriptComponent)
 DECL_COMPONENT_SPECIALIZATION(TagComponent)
 DECL_COMPONENT_SPECIALIZATION(BeatTrackerComponent)
+// Tier 1.1: Scene graph
+DECL_COMPONENT_SPECIALIZATION(HierarchyComponent)
+DECL_COMPONENT_SPECIALIZATION(LocalTransformComponent)
+DECL_COMPONENT_SPECIALIZATION(WorldTransformComponent)
+// Tier 1.3: Scripting
+DECL_COMPONENT_SPECIALIZATION(LuaScriptComponent)
 
 #undef DECL_COMPONENT_SPECIALIZATION
 
@@ -65,6 +71,10 @@ World::World() {
         m_entities[i].scriptIdx      = -1;
         m_entities[i].tagIdx         = -1;
         m_entities[i].beatTrackerIdx = -1;
+        m_entities[i].hierarchyIdx       = -1;
+        m_entities[i].localTransformIdx  = -1;
+        m_entities[i].worldTransformIdx  = -1;
+        m_entities[i].luaScriptIdx       = -1;
     }
     memset(m_systems, 0, sizeof(m_systems));
 }
@@ -99,6 +109,10 @@ EntityId World::createEntity(const char* name) {
     record.scriptIdx = -1;
     record.tagIdx = -1;
     record.beatTrackerIdx = -1;
+    record.hierarchyIdx      = -1;
+    record.localTransformIdx = -1;
+    record.worldTransformIdx = -1;
+    record.luaScriptIdx      = -1;
     
     m_entityCount++;
     
@@ -129,6 +143,10 @@ void World::destroyEntity(EntityId id) {
     removeComponent<ScriptComponent>(id);
     removeComponent<TagComponent>(id);
     removeComponent<BeatTrackerComponent>(id);
+    removeComponent<HierarchyComponent>(id);
+    removeComponent<LocalTransformComponent>(id);
+    removeComponent<WorldTransformComponent>(id);
+    removeComponent<LuaScriptComponent>(id);
     
     record.id = INVALID_ENTITY;
     record.mask = 0;
@@ -285,6 +303,10 @@ void World::clear() {
     scriptCount = 0;
     tagCount = 0;
     beatTrackerCount = 0;
+    hierarchyCount      = 0;
+    localTransformCount = 0;
+    worldTransformCount = 0;
+    luaScriptCount      = 0;
 }
 
 EntityRecord* World::getEntityRecord(EntityId id) {
@@ -318,6 +340,26 @@ int World::findFreeEntitySlot() const {
 }
 
 // Template specializations
+//
+// Slot recycling (Tier 1 fix):
+//   Previously, removeComponent<T> just set record.idxField = -1 and cleared
+//   the mask bit, but LEFT the component in the array and never decremented
+//   countVar. So every addComponent<T> after a destroyEntity bumped countVar
+//   by 1, and after 10000 add/remove cycles the array filled up and
+//   addComponent returned nullptr — manifesting as "entity creation
+//   succeeded but adding a component silently failed", followed by null
+//   derefs in callers.
+//
+//   The fix below does a classic swap-back pop:
+//     1. Find the component's slot (record.idxField).
+//     2. Move the LAST live component in the array into this slot.
+//     3. Update the moved component's owner entity to point at the new slot.
+//     4. Decrement countVar.
+//   This keeps the array packed and reclaims slots immediately. Cost: O(1)
+//   per remove, no allocation. Trade-off: iteration order is NOT stable
+//   across removes (the moved component jumps to the freed slot). The
+//   engine's systems iterate via query() which already returns in slot
+//   order, so this is fine.
 #define IMPL_ADD_COMPONENT(Type, array, countVar, idxField, compType) \
 template<> Type* World::addComponent<Type>(EntityId id) { \
     int idx = findEntityIndex(id); \
@@ -351,14 +393,42 @@ template<> bool World::hasComponent<Type>(EntityId id) const { \
     return idx >= 0 && (m_entities[idx].mask & componentBit(compType)); \
 }
 
+// Swap-back pop remove. See "Slot recycling" note above.
+//   array[countVar-1]   is the last live component.
+//   record.idxField     is the slot being freed.
+//   We move last -> freed slot, then update the owner entity's idxField
+//   to point at the freed slot (which now holds the moved component).
+//
+// Edge cases handled:
+//   - record.idxField == countVar-1: removing the last component; the
+//     swap-back would be a self-move, which is a no-op for trivially
+//     copyable structs. We skip it.
+//   - countVar == 0: nothing to remove; bail (idxField is already -1 so
+//     the early return above catches this).
+//   - moved owner entity lookup: we have to scan m_entities to find whose
+//     idxField == countVar-1. Linear scan is O(n) but only happens on
+//     remove, not on the hot add/get path.
 #define IMPL_REMOVE_COMPONENT(Type, array, countVar, idxField, compType) \
 template<> void World::removeComponent<Type>(EntityId id) { \
     int idx = findEntityIndex(id); \
     if (idx < 0) return; \
     EntityRecord& record = m_entities[idx]; \
     if (record.idxField < 0) return; \
+    int freedSlot = record.idxField; \
+    int lastSlot  = countVar - 1; \
+    if (freedSlot != lastSlot) { \
+        array[freedSlot] = array[lastSlot]; \
+        /* Find the entity that owned the moved component and repoint it. */ \
+        for (int i = 0; i < TD_MAX_ENTITIES; i++) { \
+            if (m_entities[i].id != INVALID_ENTITY && m_entities[i].idxField == lastSlot) { \
+                m_entities[i].idxField = freedSlot; \
+                break; \
+            } \
+        } \
+    } \
     record.mask &= ~componentBit(compType); \
     record.idxField = -1; \
+    countVar--; \
 }
 
 // Position
@@ -438,6 +508,28 @@ IMPL_ADD_COMPONENT(BeatTrackerComponent, beatTrackers, beatTrackerCount, beatTra
 IMPL_GET_COMPONENT(BeatTrackerComponent, beatTrackers, beatTrackerIdx)
 IMPL_HAS_COMPONENT(BeatTrackerComponent, ComponentType::BeatTracker)
 IMPL_REMOVE_COMPONENT(BeatTrackerComponent, beatTrackers, beatTrackerCount, beatTrackerIdx, ComponentType::BeatTracker)
+
+// Tier 1.1: Scene graph components
+IMPL_ADD_COMPONENT(HierarchyComponent, hierarchies, hierarchyCount, hierarchyIdx, ComponentType::Hierarchy)
+IMPL_GET_COMPONENT(HierarchyComponent, hierarchies, hierarchyIdx)
+IMPL_HAS_COMPONENT(HierarchyComponent, ComponentType::Hierarchy)
+IMPL_REMOVE_COMPONENT(HierarchyComponent, hierarchies, hierarchyCount, hierarchyIdx, ComponentType::Hierarchy)
+
+IMPL_ADD_COMPONENT(LocalTransformComponent, localTransforms, localTransformCount, localTransformIdx, ComponentType::LocalTransform)
+IMPL_GET_COMPONENT(LocalTransformComponent, localTransforms, localTransformIdx)
+IMPL_HAS_COMPONENT(LocalTransformComponent, ComponentType::LocalTransform)
+IMPL_REMOVE_COMPONENT(LocalTransformComponent, localTransforms, localTransformCount, localTransformIdx, ComponentType::LocalTransform)
+
+IMPL_ADD_COMPONENT(WorldTransformComponent, worldTransforms, worldTransformCount, worldTransformIdx, ComponentType::WorldTransform)
+IMPL_GET_COMPONENT(WorldTransformComponent, worldTransforms, worldTransformIdx)
+IMPL_HAS_COMPONENT(WorldTransformComponent, ComponentType::WorldTransform)
+IMPL_REMOVE_COMPONENT(WorldTransformComponent, worldTransforms, worldTransformCount, worldTransformIdx, ComponentType::WorldTransform)
+
+// Tier 1.3: Scripting
+IMPL_ADD_COMPONENT(LuaScriptComponent, luaScripts, luaScriptCount, luaScriptIdx, ComponentType::LuaScript)
+IMPL_GET_COMPONENT(LuaScriptComponent, luaScripts, luaScriptIdx)
+IMPL_HAS_COMPONENT(LuaScriptComponent, ComponentType::LuaScript)
+IMPL_REMOVE_COMPONENT(LuaScriptComponent, luaScripts, luaScriptCount, luaScriptIdx, ComponentType::LuaScript)
 
 // ==================== Built-in Systems ====================
 

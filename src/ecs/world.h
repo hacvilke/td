@@ -28,6 +28,12 @@ struct EntityRecord {
     int scriptIdx = -1;
     int tagIdx = -1;
     int beatTrackerIdx = -1;
+    // Tier 1.1: Scene graph
+    int hierarchyIdx = -1;
+    int localTransformIdx = -1;
+    int worldTransformIdx = -1;
+    // Tier 1.3: Scripting
+    int luaScriptIdx = -1;
 };
 
 class World {
@@ -82,6 +88,12 @@ public:
     ScriptComponent scripts[TD_MAX_ENTITIES];
     TagComponent tags[TD_MAX_ENTITIES];
     BeatTrackerComponent beatTrackers[TD_MAX_ENTITIES];
+    // Tier 1.1: Scene graph
+    HierarchyComponent hierarchies[TD_MAX_ENTITIES];
+    LocalTransformComponent localTransforms[TD_MAX_ENTITIES];
+    WorldTransformComponent worldTransforms[TD_MAX_ENTITIES];
+    // Tier 1.3: Scripting
+    LuaScriptComponent luaScripts[TD_MAX_ENTITIES];
 
     // Component counts
     int positionCount = 0;
@@ -97,6 +109,12 @@ public:
     int scriptCount = 0;
     int tagCount = 0;
     int beatTrackerCount = 0;
+    // Tier 1.1
+    int hierarchyCount = 0;
+    int localTransformCount = 0;
+    int worldTransformCount = 0;
+    // Tier 1.3
+    int luaScriptCount = 0;
     
     // Clear all entities and components
     void clear();

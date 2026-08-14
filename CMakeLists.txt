@@ -46,6 +46,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # =============================================================================
 # These are the engine's portable subsystem sources. Both builds compile them
 # unchanged - the platform layer is the only thing that differs.
+#
+# Tier 1/2 modules added in the modularity pass:
+#   - src/scripting/script_vm.cpp    Lua VM stub (Tier 1.3, real impl TODO)
+# The other Tier 1/2/3 modules (profiler, signal, scene, serializer,
+# transport, voxel, ui, character_controller, server_authoritative) are
+# header-only — they live in .h files and are #included directly by callers.
+# This keeps the build graph small while the modules are still skeletons;
+# they'll graduate to .cpp files when the real implementations land.
 set(ENGINE_PORTABLE_SOURCES
     src/core/logger.cpp
     src/core/game_loop.cpp
@@ -67,6 +75,7 @@ set(ENGINE_PORTABLE_SOURCES
     src/ecs/world.cpp
     src/ecs/entity.cpp
     src/ecs/beat_system.cpp
+    src/scripting/script_vm.cpp
 )
 
 # NOTE: src/td/ (custom scripting VM) and src/net/ (Winsock socket/server/client)
@@ -210,10 +219,17 @@ else()
         # Uses a stub logger so it builds without windows.h on Linux CI.
         add_executable(test_world_init tests/test_world_init.cpp tests/stub_logger.cpp)
         target_link_libraries(test_world_init PRIVATE td-engine)
+        # Regression test for the component slot leak: removeComponent<T>()
+        # used to leave the slot in the array and not decrement the count,
+        # so addComponent<T>() would exhaust the array after TD_MAX_ENTITIES
+        # add/remove cycles. Now uses swap-back pop to reclaim slots.
+        add_executable(test_slot_leak tests/test_slot_leak.cpp tests/stub_logger.cpp)
+        target_link_libraries(test_slot_leak PRIVATE td-engine)
         add_test(NAME math COMMAND test_math)
         add_test(NAME ecs   COMMAND test_ecs)
         add_test(NAME physics COMMAND test_physics)
         add_test(NAME world_init COMMAND test_world_init)
+        add_test(NAME slot_leak COMMAND test_slot_leak)
     endif()
 
     # --- Editor -------------------------------------------------------------

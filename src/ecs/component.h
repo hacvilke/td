@@ -20,6 +20,12 @@ enum class ComponentType : uint8_t {
     Script,
     Tag,
     BeatTracker,
+    // ---- Tier 1.1: Scene graph components ----
+    Hierarchy,         // parent/child linked-list pointers + depth + dirty flag
+    LocalTransform,    // 2D TRS relative to parent
+    WorldTransform,    // cached world TRS (computed by Scene::updateTransforms)
+    // ---- Tier 1.3: Scripting (Lua/JS VM) ----
+    LuaScript,         // path to .lua file + VM-side ref handle
     COUNT
 };
 
@@ -181,6 +187,53 @@ struct BeatTrackerComponent {
     int   combo = 0;                 // consecutive on-beat hits (resets on miss)
     int   bestCombo = 0;             // highest combo reached
     bool  active = false;            // set true by td_start_beat_track
+};
+
+// ---- Tier 1.1: Scene Graph Components --------------------------------------
+// See src/scene/scene.h for the Scene class that drives these. Hierarchy is
+// the parent/child linked-list pointers + depth + dirty flag. LocalTransform
+// is the TRS relative to parent. WorldTransform is the cached world TRS,
+// recomputed each frame by Scene::updateTransforms().
+//
+// Why store these as components rather than in a parallel Scene-owned array?
+//   - The existing ECS query machinery (World::query(mask, ...)) can find
+//     "all entities with a parent" in one call — no separate iteration.
+//   - Serialization (Tier 1.2) can walk components uniformly without
+//     knowing about the Scene class.
+//   - The editor's inspector already knows how to edit any component via
+//     the template API; adding a parallel storage would require a separate
+//     editor code path.
+struct HierarchyComponent {
+    EntityId parent       = INVALID_ENTITY;  // INVALID_ENTITY if root
+    EntityId firstChild   = INVALID_ENTITY;  // head of children linked list
+    EntityId nextSibling  = INVALID_ENTITY;  // next sibling in parent's list
+    EntityId prevSibling  = INVALID_ENTITY;  // prev sibling (doubly-linked for O(1) remove)
+    int      depth        = 0;               // 0 for root, 1 for top-level child, ...
+    bool     transformDirty = true;          // true if local transform changed and world needs recompute
+};
+
+struct LocalTransformComponent {
+    float x = 0, y = 0;        // local position relative to parent
+    float scaleX = 1, scaleY = 1;
+    float rotation = 0;        // radians, CCW
+};
+
+struct WorldTransformComponent {
+    float x = 0, y = 0;
+    float scaleX = 1, scaleY = 1;
+    float rotation = 0;
+};
+
+// ---- Tier 1.3: Scripting Component -----------------------------------------
+// Opaque handle to a script instance in the embedded Lua VM (Tier 1.3).
+// The ScriptVM owns the actual Lua state; this component just holds the
+// file path + a ref handle so the ScriptSystem can call update() on it
+// every frame.
+struct LuaScriptComponent {
+    char     scriptPath[256] = {};     // e.g. "scripts/player_controller.lua"
+    int      vmRef           = -1;     // Lua registry ref to the script's env table
+    bool     initialized     = false;  // true after the script's init() ran
+    bool     enabled         = true;   // false = skip update() calls
 };
 
 } // namespace td
