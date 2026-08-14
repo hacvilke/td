@@ -101,18 +101,16 @@
       if (!canvas) throw new Error(`TDBridge.init: canvas "${canvasId}" not found`);
       this.canvas = canvas;
 
-      // ---- WebGL 2 context -------------------------------------------------
-      const gl = canvas.getContext('webgl2', {
-        alpha: false,
-        antialias: true,
-        premultipliedAlpha: false,
-        preserveDrawingBuffer: false,
-        powerPreference: 'high-performance',
-      });
-      if (!gl) throw new Error('WebGL 2 is not supported in this browser');
-      this.gl = gl;
-
+      // ---- Canvas sizing ---------------------------------------------------
       // Size the canvas to its CSS box * devicePixelRatio for crisp rendering.
+      // NOTE: we deliberately do NOT call canvas.getContext('webgl2') here.
+      // Emscripten's GL library will create its own context on Module.canvas
+      // when the WASM engine first calls a GL function. Pre-grabbing the
+      // context with non-matching attributes causes Emscripten's getContext()
+      // to return null (browsers only allow ONE context per canvas with a
+      // fixed set of attributes), which then crashes the engine on its first
+      // glGetString() call. The desired attributes are passed to Emscripten
+      // via Module.webglContextAttributes below.
       const dpr = window.devicePixelRatio || 1;
       const cssW = canvas.clientWidth  || 800;
       const cssH = canvas.clientHeight || 600;
@@ -125,10 +123,14 @@
       // creates the GL context on Module.canvas.
       const Module = await this._loadEmscriptenModule(canvas);
 
-      // Wait for Module.asm to be populated AND calledRun to be true.
+      // Wait for runtime to be initialized (onRuntimeInitialized fired).
       await this._waitForRuntime(Module);
 
       this.wasmExports = Module;
+      // Recover the GL context Emscripten created, for any bridge-side
+      // GL work (inspector overlays, etc.). Currently unused but kept
+      // available for downstream consumers.
+      this.gl = canvas.getContext('webgl2');
 
       // ---- Wire browser input -> WASM --------------------------------------
       this._setupBrowserInput();
@@ -172,6 +174,24 @@
           },
           noInitialRun: false,
           noExitRuntime: true,
+          // Pass our preferred GL attributes to Emscripten. The engine code
+          // calls glGetString() at the very start of td_init(); if Emscripten
+          // has not registered a GL context by then, GLctx is undefined and
+          // the call crashes. Setting webglContextAttributes here ensures
+          // Emscripten's GL library creates the context with matching attrs
+          // the first time the WASM touches GL.
+          webglContextAttributes: {
+            alpha: false,
+            antialias: true,
+            premultipliedAlpha: false,
+            preserveDrawingBuffer: false,
+            powerPreference: 'high-performance',
+            majorVersion: 2,
+            minorVersion: 0,
+            enableExtensionsByDefault: true,
+            depth: true,
+            stencil: false,
+          },
           onRuntimeInitialized: () => {
             this._runtimeReady = true;
             this._emitLog('info', 'Emscripten runtime initialized');
