@@ -132,13 +132,20 @@
       // Emscripten does NOT lazily create a GL context on the first GL call.
       // The C++ engine code (td_init -> glGetString) expects a current GL
       // context to already exist. We must explicitly create one via
-      // Module.GL.createContext() and make it current via
-      // Module.GL.makeContextCurrent(). This populates GL.currentContext
-      // and GL.contexts, so Emscripten's GL stubs (glGetString, glViewport,
-      // etc.) can dispatch to the real WebGL2 context.
-      const GL = Module.GL;
+      // GL.createContext() and make it current via GL.makeContextCurrent().
+      // This populates GL.currentContext and GL.contexts, so Emscripten's
+      // GL stubs (glGetString, glViewport, etc.) can dispatch to the real
+      // WebGL2 context.
+      //
+      // Note: in modern Emscripten, GL is a top-level GLOBAL, not on Module.
+      // We probe globalThis / window / self first, fall back to Module.GL.
+      const GL =
+          (typeof globalThis !== 'undefined' && globalThis.GL) ||
+          (typeof window      !== 'undefined' && window.GL)      ||
+          (typeof self        !== 'undefined' && self.GL)        ||
+          Module.GL;
       if (!GL || typeof GL.createContext !== 'function') {
-        throw new Error('Emscripten GL library not available on Module');
+        throw new Error('Emscripten GL library not available (neither global GL nor Module.GL)');
       }
       const ctxHandle = GL.createContext(canvas, {
         majorVersion: 2,
