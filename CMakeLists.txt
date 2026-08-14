@@ -67,8 +67,10 @@ set(ENGINE_PORTABLE_SOURCES
     src/physics/aabb.cpp
     src/physics/collision.cpp
     src/physics/rigidbody.cpp
+    src/physics/character_controller.cpp
     src/audio/wav_loader.cpp
     src/audio/mixer.cpp
+    src/audio/spatial_audio.cpp
     src/assets/png_decoder.cpp
     src/assets/obj_loader.cpp
     src/assets/asset_loader.cpp
@@ -76,6 +78,10 @@ set(ENGINE_PORTABLE_SOURCES
     src/ecs/entity.cpp
     src/ecs/beat_system.cpp
     src/scripting/script_vm.cpp
+    src/ui/ui.cpp
+    src/voxel/voxel.cpp
+    src/net/transport.cpp
+    src/net/server_authoritative.cpp
 )
 
 # NOTE: src/td/ (custom scripting VM) and src/net/ (Winsock socket/server/client)
@@ -225,11 +231,54 @@ else()
         # add/remove cycles. Now uses swap-back pop to reclaim slots.
         add_executable(test_slot_leak tests/test_slot_leak.cpp tests/stub_logger.cpp)
         target_link_libraries(test_slot_leak PRIVATE td-engine)
+        # UI toolkit tests (wave1-ui): layout, hit-testing, input dispatch,
+        # virtualized ListView, style inheritance. Uses stub_logger.cpp for
+        # Logger symbols and stub_gl.cpp for the `GLFunctions gl` global so
+        # it builds on Linux without windows.h. The test never calls GL.
+        add_executable(test_ui tests/test_ui.cpp tests/stub_logger.cpp tests/stub_gl.cpp)
+        target_link_libraries(test_ui PRIVATE td-engine)
+        # Voxel system tests (wave1-voxel): meshers (naive/greedy/culled),
+        # ambient occlusion, worldgen, raycast, VoxelWorld get/set, frustum
+        # culling, chunk streaming, lighting. Compiled directly (NOT linked
+        # against td-engine) so it builds on Linux without the GL renderer
+        # (which #includes <windows.h> on desktop). Uses stub_logger.cpp for
+        # Logger symbols and stub_mesh.cpp for Mesh symbols — the test reads
+        # VoxelMesh vertices/indices directly and never calls GL.
+        add_executable(test_voxel
+            tests/test_voxel.cpp
+            src/voxel/voxel.cpp
+            tests/stub_logger.cpp
+            tests/stub_mesh.cpp)
+        target_include_directories(test_voxel PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        # Networking tests (wave1-net): reliable UDP transport, RPC,
+        # fragmentation, client prediction + server reconciliation.
+        # Linked directly against the .cpp (not td-engine) so it builds on
+        # Linux without the GL renderer. Uses stub_logger.cpp for Logger.
+        add_executable(test_net
+            tests/test_net.cpp
+            src/net/transport.cpp
+            src/net/server_authoritative.cpp
+            tests/stub_logger.cpp)
+        target_include_directories(test_net PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(test_net PRIVATE Threads::Threads)
+        # 3D character controller tests (wave1-physaudio): swept capsule
+        # collision, sliding, slope limit, step handling, ground detection.
+        add_executable(test_character_controller
+            tests/test_character_controller.cpp
+            src/physics/character_controller.cpp
+            src/physics/aabb.cpp
+            src/physics/collision.cpp
+            tests/stub_logger.cpp)
+        target_include_directories(test_character_controller PRIVATE ${CMAKE_SOURCE_DIR}/src)
         add_test(NAME math COMMAND test_math)
         add_test(NAME ecs   COMMAND test_ecs)
         add_test(NAME physics COMMAND test_physics)
         add_test(NAME world_init COMMAND test_world_init)
         add_test(NAME slot_leak COMMAND test_slot_leak)
+        add_test(NAME ui    COMMAND test_ui)
+        add_test(NAME voxel COMMAND test_voxel)
+        add_test(NAME net   COMMAND test_net)
+        add_test(NAME character_controller COMMAND test_character_controller)
     endif()
 
     # --- Editor -------------------------------------------------------------
