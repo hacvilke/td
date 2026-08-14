@@ -59,7 +59,8 @@ implementation code + ~3,400 lines of tests across 9 new modules.
 | Wave 2 modules (9 in one test) | tests/test_wave2.cpp | 57 | 55/57 (96%) |
 | Web modules (server router + deprecated + TDEngine API) | tests/test_web_modules.js | 80 | 80/80 (100%) |
 | Web network module (Socket + RPC + ServerConfig) | tests/test_net_websocket.js | 28 | 28/28 (100%) |
-| **Totals** | | **456** | **451/456 (98.9%)** |
+| Web editor modules (Inspector + Profiler + ErrorBoundary) | tests/test_editor_modules.js | 78 | 78/78 (100%) |
+| **Totals** | | **534** | **529/534 (99.1%)** |
 
 The 5 failing tests are: 3 in net's 256KB fragmentation stress test
 (an edge case in fragment reassembly), 1 in shader graph link dedup (a
@@ -102,6 +103,28 @@ They are loaded in dependency order via `<script>` tags in `web/index.html`:
 ```
 server_router.js  →  deprecated_tracker.js  →  js_bridge.js  →  td_api.js  →  net_websocket.js
 ```
+
+### Wave 4 — Editor trio (v=22, inspector + profiler + error boundary)
+
+Wave 4 closes the gap between TD-as-runtime and TD-as-editor. Three additive
+modules give the web player the same observability a Godot user expects from
+the editor's Remote scene tree + Profiler + script-error popup.
+
+| Module | File | Purpose |
+|---|---|---|
+| Live ECS Inspector | `web/inspector.js` | Godot-like read-only entity/component browser. `TDInspector.mount(containerEl)` renders a live panel listing every entity with its position/velocity/sprite/collider/beat state. Auto-refreshes at 4 Hz (configurable). Headless `TDInspector.snapshot()` returns a plain JS object describing the world for tests. |
+| Frame Profiler | `web/profiler.js` | Rolling frame-time graph with 60 FPS / 30 FPS budget lines, avg/max/min frame time, named counters (drawCalls, etc.), vertical markers, and WASM/JS heap meter. `TDProfiler.mount(containerEl)` returns a handle with `.frame(dtMs)`, `.counter(name, value)`, `.increment(name, delta)`, `.mark(label)`. |
+| Error Boundary | `web/error_boundary.js` | Wraps `window.onerror` + `unhandledrejection` and renders a friendly crash card with message, metadata, collapsible stack trace, and Submit/Reload/Dismiss actions. Stores last 10 reports in `localStorage` under `td-error-reports`. `TDErrorBoundary.report(err, ctx)` works headless. |
+
+All three modules follow the established pattern:
+- IIFE, no external dependencies, lazy initialization.
+- Pure additive — failure to load doesn't break the engine boot.
+- Top bar gets two new links ("Inspect", "Profiler"); the error boundary
+  installs itself silently on DOMContentLoaded.
+- 78 new tests in `tests/test_editor_modules.js` (100% pass rate, runs in
+  Node via vm sandbox with a fake DOM, or in a browser).
+
+Test totals after Wave 4: **534 tests, 529 passing (99.1%)**.
 
 Also shipped alongside the gauntlets:
 - **Component slot leak fix** — `World::removeComponent<T>()` now does a
