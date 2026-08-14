@@ -128,11 +128,15 @@ bool SpriteBatch::init() {
                              (void*)(4 * sizeof(float)));
     
     // Create IBO with static indices
-    uint32_t indices[MAX_SPRITES * INDICES_PER_SPRITE];
+    // NOTE: This array is MAX_SPRITES * INDICES_PER_SPRITE * sizeof(uint32_t)
+    // = 10000 * 6 * 4 = 240 KB. That's far too large to put on the WASM
+    // stack (default 64KB, even 8MB stack is wasteful for a one-shot alloc).
+    // Heap-allocate it instead so we don't risk a stack overflow.
+    uint32_t* indices = new uint32_t[MAX_SPRITES * INDICES_PER_SPRITE];
     for (int i = 0; i < MAX_SPRITES; i++) {
         int vertBase = i * 4;
         int idxBase = i * 6;
-        
+
         // Two triangles per quad
         indices[idxBase + 0] = vertBase + 0;
         indices[idxBase + 1] = vertBase + 1;
@@ -141,10 +145,13 @@ bool SpriteBatch::init() {
         indices[idxBase + 4] = vertBase + 3;
         indices[idxBase + 5] = vertBase + 0;
     }
-    
+
     gl.glGenBuffers(1, &m_ibo);
     gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ibo);
-    gl.glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    gl.glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                    sizeof(uint32_t) * MAX_SPRITES * INDICES_PER_SPRITE,
+                    indices, GL_STATIC_DRAW);
+    delete[] indices;
     
     gl.glBindVertexArray(0);
     
