@@ -7,6 +7,66 @@
 
 ---
 
+## 0. Implementation Status (updated post-gauntlet)
+
+After the Tier 1/2/3 gauntlet pass, the API surface for every workstream below
+is now in place. Modules marked **SHIPPED** have working implementations;
+modules marked **SKELETON** have a clean API + stubs that compile + link on
+both desktop and WASM, with the real algorithm left as TODO. Gameplay code
+can target every API today; SKELETON modules graduate to SHIPPED by replacing
+the stub body without changing the header.
+
+| # | Workstream | Tier | Status | Source file |
+|---|---|---|---|---|
+| 1.1 | Scene graph / node hierarchy | 1 | **SHIPPED** | `src/scene/scene.h` |
+| 1.2 | Serialization format (.tdscene JSON) | 1 | **SHIPPED** (writer) / **SKELETON** (reader) | `src/serialization/serializer.h` |
+| 1.3 | Lua scripting VM + hot reload | 1 | **SKELETON** | `src/scripting/script_vm.{h,cpp}` |
+| 1.4 | Signals / event bus | 1 | **SHIPPED** | `src/core/signal.h` |
+| 1.5 | Network transport + RPC | 1 | **SKELETON** (interface only) | `src/net/transport.h` |
+| 1.6 | Profiler v1 | 1 | **SHIPPED** | `src/core/profiler.h` |
+| 1.7 | Asset browser + importers v1 | 1 | TODO | (replace `editor/asset_browser.cpp`) |
+| 2.1 | UI toolkit v1 | 2 | **SKELETON** (layout + hit-test; draw stub) | `src/ui/ui.h` |
+| 2.2 | 3D character controller | 2 | **SKELETON** (swept collision TODO) | `src/physics/character_controller.h` |
+| 2.3 | Voxel chunk system v1 | 2 | **SKELETON** (chunk storage + streamer; meshing TODO) | `src/voxel/chunk.h` |
+| 2.4 | GPU skinning / animation | 2 | TODO | — |
+| 2.5 | Asset catalog / Addressables | 2 | TODO | — |
+| 2.6 | Native plugin ABI (GDExtension-equivalent) | 2 | TODO | — |
+| 2.7 | 3D positional audio | 2 | TODO | (extend `src/audio/mixer.{h,cpp}`) |
+| 2.8 | Visual shader editor v1 | 2 | TODO | — |
+| 3.1 | Server-authoritative netcode + prediction | 3 | **SKELETON** (interfaces + replay buffer) | `src/net/server_authoritative.h` |
+| 3.2 | Interest management + chunked replication | 3 | TODO | — |
+| 3.3 | Script sandboxing + UGC permissions | 3 | TODO | (depends on 1.3 Lua VM) |
+| 3.4 | UGC asset store / marketplace | 3 | TODO | — |
+| 3.5 | Visual scripting graph | 3 | TODO | — |
+| 3.6 | DOTS-style archetype ECS upgrade | 3 | TODO | — |
+| 3.7 | Relay / NAT-traversal service | 3 | TODO | — |
+| 3.8 | GPU-driven rendering + greedy meshing | 3 | TODO | — |
+| 3.9 | Localization, XR, mobile touch | 3 | TODO | — |
+| 3.10 | Cluster / hosting story | 3 | TODO | — |
+
+Also shipped alongside the gauntlet:
+- **Component slot leak fix** — `World::removeComponent<T>()` now does a
+  swap-back pop, reclaiming the slot in the component array. Previously,
+  removeComponent left the slot in the array and never decremented the count,
+  so after 10000 add/remove cycles the array was full and addComponent
+  returned nullptr. Regression test: `tests/test_slot_leak.cpp`.
+- **4 new ECS component types** — HierarchyComponent, LocalTransformComponent,
+  WorldTransformComponent (1.1), LuaScriptComponent (1.3).
+- **Critical WASM loader bug fix** — the live site was broken because
+  `td-engine.js` was loaded twice (once statically, once dynamically by the
+  bridge), causing `Uncaught SyntaxError: Identifier 'EmscriptenEH' has
+  already been declared`. Fixed by removing the static `<script>` tag and
+  having the bridge set `global.Module` BEFORE dynamically injecting the
+  glue script. See commit `1d46e68`.
+- **Boat logo** — the TD brand mark is now an SVG with T upright as the
+  sail and D rotated 90° CCW as the boat hull, with a gentle ±3° rocking
+  animation.
+
+The next priority is to fill in the SKELETONs in priority order: Lua VM
+(1.3) → network transport (1.5) → voxel mesher (2.3) → UI draw bridge (2.1).
+
+---
+
 ## 1. Executive Summary
 
 TD Engine already has a respectable foundation: an ECS World, OpenGL 3.3 + WebGL/WASM renderer, basic 2D physics, an ImGui editor, and a ~50-function JS bridge. What it is **missing** vs. Unity and Godot is the entire "production stack": a node/scene hierarchy, a serializable asset format (Unity `.prefab` / Godot `.tres`), a high-level networking layer, a scripting VM with hot reload, a UI toolkit, a real profiler, and a voxel/chunk-streaming layer.
