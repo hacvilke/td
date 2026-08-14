@@ -795,6 +795,230 @@ void td_render_frame()
     mainLoop();
 }
 
+// =============================================================================
+// Wave 1/2 module C API exports
+// =============================================================================
+// These expose the new Tier 1/2/3/4 modules to JavaScript so web games can
+// use them. Each function is a thin wrapper that forwards to the singleton
+// or static method in the corresponding module.
+// =============================================================================
+
+// --- Scripting VM (tdscript) ------------------------------------------------
+#include "../src/scripting/script_vm.h"
+#include "../src/scripting/script_vm_internal.h"
+
+// Load a tdscript source string and return a script handle (id >= 0 on
+// success, -1 on failure). The handle is opaque to JS.
+EMSCRIPTEN_KEEPALIVE
+int td_script_load(const char* src, const char* name)
+{
+    td::ScriptHandle h = td::script::loadScriptFromSource(
+        td::ScriptVM::get(), src, name ? name : "<web>");
+    return h.id;
+}
+
+// Call a named function in a loaded script. Args are passed as a JSON
+// array string (e.g. "[1, 2.5, \"hello\"]"). Returns the first return
+// value as a string (numbers stringified, strings quoted, nil/true/false
+// as "nil"/"true"/"false"). Returns "nil" on error.
+EMSCRIPTEN_KEEPALIVE
+const char* td_script_call(int handle, const char* fnName, const char* argsJson)
+{
+    static std::string result;
+    if (handle < 0 || !fnName) { result = "nil"; return result.c_str(); }
+    td::ScriptHandle h{handle};
+    // Parse argsJson as a list of values. (Minimal — only numbers + strings.)
+    std::vector<td::script::Value> args;
+    if (argsJson) {
+        // Very simple: split by commas, trim, parse as number or quoted string.
+        std::string s = argsJson;
+        size_t i = 0;
+        while (i < s.size()) {
+            while (i < s.size() && (s[i] == ' ' || s[i] == ',' || s[i] == '[' || s[i] == ']')) i++;
+            if (i >= s.size()) break;
+            if (s[i] == '"') {
+                size_t end = s.find('"', i + 1);
+                if (end == std::string::npos) break;
+                args.push_back(td::script::Value::makeStr(s.substr(i + 1, end - i - 1)));
+                i = end + 1;
+            } else {
+                size_t end = s.find_first_of(",]", i);
+                if (end == std::string::npos) end = s.size();
+                std::string numStr = s.substr(i, end - i);
+                double n = 0;
+                bool isNum = true;
+                try { n = std::stod(numStr); }
+                catch (...) { isNum = false; }
+                if (isNum) args.push_back(td::script::Value::makeNum(n));
+                else if (numStr == "true") args.push_back(td::script::Value::makeBool(true));
+                else if (numStr == "false") args.push_back(td::script::Value::makeBool(false));
+                else args.push_back(td::script::Value::makeNil());
+                i = end;
+            }
+        }
+    }
+    auto ret = td::script::callScriptFunction(h, fnName, std::move(args));
+    if (ret.empty()) { result = "nil"; return result.c_str(); }
+    const auto& v = ret[0];
+    switch (v.type) {
+        case td::script::Value::Type::Nil:     result = "nil"; break;
+        case td::script::Value::Type::Bool:    result = v.boolVal ? "true" : "false"; break;
+        case td::script::Value::Type::Number:  result = std::to_string(v.numVal); break;
+        case td::script::Value::Type::String:  result = *v.strVal; break;
+        default: result = "nil"; break;
+    }
+    return result.c_str();
+}
+
+// Unload a script. After this, the handle is invalid.
+EMSCRIPTEN_KEEPALIVE
+void td_script_unload(int handle)
+{
+    if (handle < 0) return;
+    td::ScriptVM::get().unloadScript(td::ScriptHandle{handle});
+}
+
+// --- i18n / Localization -----------------------------------------------------
+#include "../src/core/i18n.h"
+
+EMSCRIPTEN_KEEPALIVE
+void td_i18n_load(const char* localeStr, const char* json)
+{
+    if (!localeStr || !json) return;
+    td::i18n::Localization::get().loadTable(
+        td::i18n::Locale::fromString(localeStr), json);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_i18n_set_locale(const char* localeStr)
+{
+    if (!localeStr) return;
+    td::i18n::Localization::get().setActiveLocale(
+        td::i18n::Locale::fromString(localeStr));
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* td_i18n_t(const char* key)
+{
+    static std::string out;
+    out = td::i18n::Localization::get().t(key ? key : "");
+    return out.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_i18n_is_rtl()
+{
+    return td::i18n::Localization::get().isRTL() ? 1 : 0;
+}
+
+// --- Touch + Gamepad ---------------------------------------------------------
+#include "../src/platform/xr_input.h"
+
+static td::input::TouchManager g_touch;
+static td::input::GamepadManager g_gamepads;
+
+EMSCRIPTEN_KEEPALIVE
+void td_touch_begin_frame() { g_touch.beginFrame(); }
+
+EMSCRIPTEN_KEEPALIVE
+void td_touch_start(int id, float x, float y, float pressure)
+{
+    g_touch.onTouchStart(id, td::Vec2{x, y}, pressure);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_touch_move(int id, float x, float y, float pressure)
+{
+    g_touch.onTouchMove(id, td::Vec2{x, y}, pressure);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_touch_end(int id, float x, float y)
+{
+    g_touch.onTouchEnd(id, td::Vec2{x, y});
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_touch_count() { return g_touch.touchCount(); }
+
+EMSCRIPTEN_KEEPALIVE
+float td_touch_x(int idx) {
+    auto* t = g_touch.getTouch(idx);
+    return t ? t->position.x : 0.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float td_touch_y(int idx) {
+    auto* t = g_touch.getTouch(idx);
+    return t ? t->position.y : 0.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float td_touch_pinch_scale() { return g_touch.pinchScale(); }
+
+EMSCRIPTEN_KEEPALIVE
+void td_gamepad_begin_frame() { g_gamepads.beginFrame(); }
+
+EMSCRIPTEN_KEEPALIVE
+void td_gamepad_set_connected(int idx, int connected, const char* id, const char* mapping)
+{
+    g_gamepads.setGamepadConnected(idx, connected != 0,
+        id ? id : "", mapping ? mapping : "standard");
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_gamepad_set_button(int idx, int btn, int pressed)
+{
+    if (idx < 0 || idx >= td::input::GamepadManager::MAX_GAMEPADS) return;
+    g_gamepads.gamepadRef(idx).setButton(btn, pressed != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_gamepad_set_analog(int idx, int btn, float value)
+{
+    if (idx < 0 || idx >= td::input::GamepadManager::MAX_GAMEPADS) return;
+    g_gamepads.gamepadRef(idx).setAnalogButton(btn, value);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_gamepad_set_axis(int idx, int axis, float value)
+{
+    if (idx < 0 || idx >= td::input::GamepadManager::MAX_GAMEPADS) return;
+    g_gamepads.gamepadRef(idx).setAxis(axis, value);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_gamepad_button_pressed(int idx, int btn)
+{
+    auto* gp = g_gamepads.getGamepad(idx);
+    if (!gp) return 0;
+    return gp->buttonPressed[btn] ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float td_gamepad_axis(int idx, int axis)
+{
+    auto* gp = g_gamepads.getGamepad(idx);
+    if (!gp) return 0.0f;
+    return gp->axis[axis];
+}
+
+// --- Visual Shader Graph (compile to GLSL, return string) -------------------
+#include "../src/renderer/shader_graph.h"
+
+EMSCRIPTEN_KEEPALIVE
+const char* td_shader_graph_compile(int nodeCount)
+{
+    // The JS side builds a ShaderGraph via the existing td_* APIs (TODO:
+    // add node/link add/remove C APIs). For now this is a placeholder
+    // that returns the default triangle shader.
+    (void)nodeCount;
+    static std::string glsl;
+    td::shader::ShaderGraph g;
+    glsl = g.compileToFragmentShader();
+    return glsl.c_str();
+}
+
 } // extern "C"
 
 // =============================================================================
