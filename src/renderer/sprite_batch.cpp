@@ -7,6 +7,53 @@
 namespace td {
 
 // Embedded sprite shader source
+//
+// Two variants are kept in sync:
+//   - Desktop OpenGL 3.3+ : #version 330 core, layout(location=...) syntax
+//   - WebGL2 / GLSL ES 3.0: #version 300 es  + precision qualifiers
+//
+// The desktop GLSL `#version 330 core` directive is rejected by WebGL2's
+// GLSL ES compiler ('core' is an invalid version directive). Conversely,
+// `#version 300 es` is invalid on desktop GL 3.3 contexts. So we select
+// the correct source at compile time via #ifdef __EMSCRIPTEN__.
+#ifdef __EMSCRIPTEN__
+static const char* SPRITE_VERT_SRC = R"(
+#version 300 es
+precision highp float;
+layout (location = 0) in vec2 a_position;
+layout (location = 1) in vec2 a_texcoord;
+layout (location = 2) in vec4 a_color;
+
+uniform mat4 u_projection;
+uniform mat4 u_view;
+
+out vec2 v_texcoord;
+out vec4 v_color;
+
+void main() {
+    gl_Position = u_projection * u_view * vec4(a_position, 0.0, 1.0);
+    v_texcoord = a_texcoord;
+    v_color = a_color;
+}
+)";
+
+static const char* SPRITE_FRAG_SRC = R"(
+#version 300 es
+precision highp float;
+in vec2 v_texcoord;
+in vec4 v_color;
+
+uniform sampler2D u_texture;
+
+out vec4 FragColor;
+
+void main() {
+    vec4 texColor = texture(u_texture, v_texcoord);
+    if (texColor.a < 0.01) discard;
+    FragColor = texColor * v_color;
+}
+)";
+#else
 static const char* SPRITE_VERT_SRC = R"(
 #version 330 core
 layout (location = 0) in vec2 a_position;
@@ -41,6 +88,7 @@ void main() {
     FragColor = texColor * v_color;
 }
 )";
+#endif
 
 bool SpriteBatch::init() {
     // Create shader from embedded source

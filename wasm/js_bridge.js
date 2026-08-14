@@ -178,7 +178,24 @@
       // ---- Boot the engine --------------------------------------------------
       const td_init    = Module.cwrap('td_init',         null, ['number', 'number']);
       const td_version = Module.cwrap('td_get_version',  'string');
-      td_init(canvas.width, canvas.height);
+      // td_init() ends by calling emscripten_set_main_loop(mainLoop, 0, 1).
+      // The trailing `1` (simulate_infinite_loop=true) makes Emscripten throw
+      // a special 'unwind' sentinel to unwind the C stack back to the JS event
+      // loop. This is NORMAL — it's how Emscripten transfers control from the
+      // synchronous C boot path to the async rAF-driven main loop. We must
+      // catch and swallow it; otherwise the bridge's Promise rejects and the
+      // UI shows 'Error: undefined' even though the engine is fully ready.
+      try {
+        td_init(canvas.width, canvas.height);
+      } catch (e) {
+        // Emscripten's 'unwind' can arrive as either the bare string 'unwind'
+        // or an ExitStatus-like object with .name === 'ExitStatus'.
+        const isUnwind = (e === 'unwind')
+          || (e && e.name === 'ExitStatus' && e.message === 'unwind')
+          || (e && typeof e === 'object' && e.toString && e.toString().indexOf('unwind') !== -1);
+        if (!isUnwind) throw e;
+        this._emitLog('info', 'Emscripten main loop started (unwind sentinel caught)');
+      }
       this._emitLog('info', td_version());
 
       this.ready = true;
