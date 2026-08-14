@@ -47,22 +47,61 @@ implementation code + ~3,400 lines of tests across 9 new modules.
 | 3.10 | Cluster / hosting story | 3 | TODO | — |
 | 4.1 | WebGPU renderer path (NEW Tier 4) | 4 | **SKELETON** (interface + WGSL templates; Dawn/wgpu bindings TODO) | `src/renderer/webgpu_renderer.h` |
 
-### Test coverage (Wave 1 + Wave 2)
+### Test coverage (Wave 1 + Wave 2 + Wave 3 web)
 
 | Module | Test file | Tests | Pass rate |
 |---|---|---|---|
 | Scripting VM (tdscript) | tests/test_script_vm.cpp | 42 | 42/42 (100%) |
-| Network transport + RPC | tests/test_net.cpp | 90 | 87/90 (97%) |
+| Network transport + RPC (C++) | tests/test_net.cpp | 90 | 87/90 (97%) |
 | Voxel chunk mesher | tests/test_voxel.cpp | 74 | 74/74 (100%) |
 | UI toolkit | tests/test_ui.cpp | 62 | 62/62 (100%) |
 | Character controller | tests/test_character_controller.cpp | 23 | 23/23 (100%) |
 | Wave 2 modules (9 in one test) | tests/test_wave2.cpp | 57 | 55/57 (96%) |
-| **Totals** | | **348** | **343/348 (98.6%)** |
+| Web modules (server router + deprecated + TDEngine API) | tests/test_web_modules.js | 80 | 80/80 (100%) |
+| Web network module (Socket + RPC + ServerConfig) | tests/test_net_websocket.js | 28 | 28/28 (100%) |
+| **Totals** | | **456** | **451/456 (98.9%)** |
 
 The 5 failing tests are: 3 in net's 256KB fragmentation stress test
 (an edge case in fragment reassembly), 1 in shader graph link dedup (a
 test bug — the graph correctly creates the link), and 1 in asset content
 comparison (a test bug — the assertion compares against the wrong format).
+
+### Wave 3 — Web boot chain + new web modules (v=17 → v=21)
+
+Between v=9 and v=17, the live site was completely broken — every game
+timed out at "Waiting for Emscripten runtime". The fix required 9
+iterations because each fix exposed a new layer of integration bugs.
+The chain is documented here so future maintainers don't repeat the
+debugging journey.
+
+| Version | Bug fixed | Root cause |
+|---|---|---|
+| v=9 | (broken baseline) | Bridge polled `Module.calledRun` |
+| v=10 | Still timed out | Bridge polled `Module.asm` (also removed) |
+| v=11 | Pre-grabbed WebGL2 context with non-matching attrs | Emscripten's getContext() returned null |
+| v=12 | Passed `webglContextAttributes` | Emscripten doesn't lazily create GL context |
+| v=13 | Called `Module.GL.createContext` | `Module.GL` doesn't exist in modern Emscripten |
+| v=14 | Resolved GL from `globalThis` | `unwind` sentinel treated as fatal + desktop GLSL `#version 330 core` |
+| v=15 | Caught unwind + used `#version 300 es` | `R"(` raw string put `#version` on line 2 |
+| v=16 | Custom raw-string delim `R"GLSL_ES(...)"` | `new td::World()` (12 MB) overflowed default 16 MB WASM memory |
+| v=17 | Bumped `INITIAL_MEMORY=64MB` + moved 240 KB indices[] off stack | ✅ ENGINE BOOTS — all 4 games playable at 60 FPS |
+
+With the engine booting reliably, Wave 3 then shipped four new web modules:
+
+| Module | File | Version | Purpose |
+|---|---|---|---|
+| Server URL Router | `web/server_router.js` | v=18 | Lets users self-host the engine on their own VPN/server/CDN via `?server=<URL>` query param + Settings panel UI |
+| Deprecated API Tracker + Filter Console Tabs | `web/deprecated_tracker.js` | v=19 | Godot-like deprecated API warning system with hit-counter registry + All\|Info\|Warning\|Error\|Deprecated filter tabs on the on-page console |
+| Modular TDEngine API | `web/td_api.js` | v=20 | Wraps the low-level `TDBridge` / `Module._td_*` C API in a clean, Godot-like namespace: `TDEngine.ecs.create()`, `TDEngine.input.isKeyDown()`, `TDEngine.beat.start()`, etc. 12 subsystems, lazy cwrap caching, auto-deprecation hook on direct `TDBridge.wasmExports` access. |
+| Network Module (WebSocket) | `web/net_websocket.js` | v=21 | Exposes the engine's networking abstractions to web games: `TDNet.Socket` (auto-reconnect, message queueing), `TDNet.RPC` (registerMethod + callRemote + notify + timeouts + async callbacks), `TDNet.ServerConfig` (saved server profiles + UI panel). Wire format matches C++ RpcServer for desktop↔web interop. |
+
+All four modules are pure-JS, additive (no impact on engine boot), and
+ship with Node + browser test suites (108 new tests, 100% pass rate).
+They are loaded in dependency order via `<script>` tags in `web/index.html`:
+
+```
+server_router.js  →  deprecated_tracker.js  →  js_bridge.js  →  td_api.js  →  net_websocket.js
+```
 
 Also shipped alongside the gauntlets:
 - **Component slot leak fix** — `World::removeComponent<T>()` now does a

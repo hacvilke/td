@@ -45,6 +45,136 @@ Don't want to build from source? Grab the latest Windows x64 build from the
 
 ## Writing a web game in JavaScript
 
+The recommended way is the **modular `TDEngine` API** (v=20+):
+
+```javascript
+// Boot the engine.
+await TDEngine.init('game-canvas');
+
+// Create entities via the ECS subsystem.
+const player = TDEngine.ecs.create('Player');
+TDEngine.ecs.setPosition(player, 100, 100);
+TDEngine.ecs.setSprite(player, 32, 32, 1, 1, 1, 1);
+
+// Poll input via the Input subsystem (Win32 VK codes).
+TDEngine.lifecycle.onReady(() => {
+  if (TDEngine.input.isKeyDown(TDEngine.input.Key.A)) {
+    TDEngine.ecs.setPosition(player, /*...*/);
+  }
+});
+
+// Multiplayer: connect to a WebSocket server.
+const conn = TDEngine.net.connect('wss://my-server/room');
+conn.rpc.registerMethod('ping', (args) => 'pong:' + args[0]);
+conn.rpc.callRemote('getUser', [42], 5000)
+     .then(user => console.log('got user:', user));
+
+// Rhythm games: start a beat tracker.
+TDEngine.beat.start(entityId, 120 /* BPM */, 0.15 /* windowHalfSec */);
+TDEngine.beat.setCallback((beatCount) => console.log('beat #' + beatCount));
+
+// Localization: load a locale table + look up keys.
+TDEngine.i18n.load('fr', '{"hello":"bonjour"}');
+TDEngine.i18n.setLocale('fr');
+console.log(TDEngine.i18n.t('hello'));  // "bonjour"
+
+// Scripting: load + call tdscript VM functions.
+const handle = TDEngine.script.load('function on_update(dt) end', 'player.lua');
+TDEngine.script.call(handle, 'on_update', '[0.016]');
+```
+
+### Subsystems at a glance
+
+| Subsystem | Methods | Notes |
+|---|---|---|
+| `TDEngine.lifecycle` | init, onReady, shutdown, getVersion, isReady, resize | Boot + lifecycle hooks |
+| `TDEngine.ecs` | create, destroy, isValid, count, setPosition, getPosition, setVelocity, setSprite, setCollider | ECS entity/component management |
+| `TDEngine.input` | isKeyDown, isMouseDown, getMousePos + `Key`/`Mouse` constants | Input polling |
+| `TDEngine.beat` | start, stop, isOnBeat, getCount, registerHit, getCombo, setBpm, setCallback, playSound | Rhythm / beat tracker (13 APIs) |
+| `TDEngine.script` | load, call, unload | tdscript VM |
+| `TDEngine.i18n` | load, setLocale, t, isRtl | Localization |
+| `TDEngine.audio` | resume, fillBuffer | Audio |
+| `TDEngine.touch` | beginFrame, start, move, end, count, x, y, pinchScale | Multi-touch (8 APIs) |
+| `TDEngine.gamepad` | beginFrame, setConnected, setButton, setAnalog, setAxis, buttonPressed, axis | Gamepad (8 APIs) |
+| `TDEngine.shaderGraph` | compile | Visual shader graph |
+| `TDEngine.net` | Socket, RPC, ServerConfig, connect | WebSocket multiplayer (v=21+) |
+| `TDEngine.deprecated` | warn, getRegistry, subscribe, classifyDeprecated | Deprecated API tracking (v=19+) |
+| `TDEngine.server` | getCurrentServerUrl, saveServerUrl, resolveAsset, probeServer | Self-host the engine on your own VPN (v=18+) |
+
+The legacy `TDBridge` global still works for backwards compatibility —
+direct access logs a one-time deprecation warning pointing users to the
+new `TDEngine.*` namespace.
+
+### Self-hosting the engine on your own server
+
+The web player can load engine assets (td-engine.js, td-engine.wasm,
+examples/*) from a custom server. Three ways:
+
+1. **Per-visit override**: append `?server=<URL>` to the page URL.
+   Example: `https://hacvilke.github.io/td/?server=https://my-vpn.example.com/td/`
+2. **Persistent setting**: click the "Server" link in the top bar, enter
+   the URL, click "Save & reload". Persists to localStorage.
+3. **Programmatic**: `TDServerRouter.saveServerUrl('https://my-server/td/')`
+   then reload.
+
+The server must serve over HTTPS (or be localhost) and send
+`Access-Control-Allow-Origin: *` for cross-origin WASM + script loading.
+
+### Multiplayer (WebSocket transport)
+
+Click the "Multiplayer" link in the top bar to manage saved server
+profiles. Servers are saved per-browser (localStorage) with an optional
+"auto-connect on page load" flag.
+
+In code:
+
+```javascript
+// Connect to a server
+const conn = TDEngine.net.connect('wss://my-server/room', {
+  autoReconnect: true,
+  maxReconnect: 5,
+  reconnectDelayMs: 1000,
+});
+
+// Register RPC handlers (other clients can call these)
+conn.rpc.registerMethod('getScore', (args) => currentScore);
+
+// Call remote methods (returns a Promise)
+conn.rpc.callRemote('getScore', [playerId], 5000)
+     .then(score => console.log('remote score:', score))
+     .catch(err => console.error('RPC failed:', err));
+
+// Fire-and-forget (no reply expected)
+conn.rpc.notify('playerJoined', [playerId]);
+```
+
+Wire format (JSON, matches the C++ RpcServer for desktop↔web interop):
+- Request: `{id, m, a}` (id=integer, m=method name, a=args array)
+- Response: `{id, r}` (success) or `{id, e}` (error message)
+- Notify: `{m, a}` (no id = no reply)
+
+### Deprecated API tracking + filter console
+
+The on-page engine console (bottom of the screen) has filter tabs:
+**All | Info | Warning | Error | Deprecated**. Each tab shows a count
+badge; click to filter. A search box narrows by substring. The Clear
+button resets all counts.
+
+To flag a deprecated API from your game code:
+
+```javascript
+TDDeprecated.warn('myOldFunction', 'myNewFunction', '2.0');
+// Logs: [DEPRECATED] myOldFunction (since v2.0) — use myNewFunction instead [1x]
+// Increments a per-API hit counter accessible via TDDeprecated.getRegistry()
+```
+
+The C++ engine can also emit `[DEPRECATED] apiName (since vX.Y) — use replacement instead`
+via `TD_LOG_WARN` — these are auto-classified into the Deprecated tab.
+
+---
+
+### Legacy `TDBridge` API (still works, with deprecation warning)
+
 ```javascript
 // Wait for the engine to boot.
 TDBridge.onReady(() => {
