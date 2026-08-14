@@ -35,15 +35,15 @@ WIN_LIBS  ?= -lopengl32 -lgdi32 -luser32 -lwinmm -lws2_32
 
 # Engine sources (desktop = everything in src/, including platform/win32_*.cpp).
 ENGINE_SRC = \
-    $(wildcard $(SRC_DIR)/core/*.cpp) \
-    $(wildcard $(SRC_DIR)/platform/*.cpp) \
-    $(wildcard $(SRC_DIR)/renderer/*.cpp) \
-    $(wildcard $(SRC_DIR)/physics/*.cpp) \
-    $(wildcard $(SRC_DIR)/audio/*.cpp) \
-    $(wildcard $(SRC_DIR)/net/*.cpp) \
-    $(wildcard $(SRC_DIR)/assets/*.cpp) \
-    $(wildcard $(SRC_DIR)/ecs/*.cpp) \
-    $(wildcard $(SRC_DIR)/td/*.cpp)
+	$(wildcard $(SRC_DIR)/core/*.cpp) \
+	$(wildcard $(SRC_DIR)/platform/*.cpp) \
+	$(wildcard $(SRC_DIR)/renderer/*.cpp) \
+	$(wildcard $(SRC_DIR)/physics/*.cpp) \
+	$(wildcard $(SRC_DIR)/audio/*.cpp) \
+	$(wildcard $(SRC_DIR)/net/*.cpp) \
+	$(wildcard $(SRC_DIR)/assets/*.cpp) \
+	$(wildcard $(SRC_DIR)/ecs/*.cpp) \
+	$(wildcard $(SRC_DIR)/td/*.cpp)
 
 ENGINE_OBJ = $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(ENGINE_SRC))
 
@@ -60,45 +60,43 @@ EDITOR_EXE  = $(BIN_DIR)/td-editor.exe
 #   - src/platform/win32_window.cpp    (replaced by wasm/emscripten_main.cpp)
 #   - src/platform/win32_input.cpp     (replaced by Emscripten HTML5 callbacks)
 #   - src/audio/audio_engine.cpp       (uses waveOut; JS Web Audio replaces it)
-#   - src/net/socket.cpp               (uses Winsock; JS WebSocket replaces it)
+# src/td/ (custom scripting VM) and src/net/ (Winsock) were removed in the
+# engine cleanup pass — see docs/MODULARITY_ROADMAP.md for the plan to
+# re-add them properly (Lua VM + ENet, Tier 1).
 WASM_ENGINE_SRC = \
-    $(SRC_DIR)/core/logger.cpp \
-    $(SRC_DIR)/core/game_loop.cpp \
-    $(SRC_DIR)/renderer/gl_renderer.cpp \
-    $(SRC_DIR)/renderer/sprite_batch.cpp \
-    $(SRC_DIR)/renderer/camera.cpp \
-    $(SRC_DIR)/renderer/framebuffer.cpp \
-    $(SRC_DIR)/renderer/gl_shader.cpp \
-    $(SRC_DIR)/renderer/texture.cpp \
-    $(SRC_DIR)/renderer/mesh.cpp \
-    $(SRC_DIR)/physics/aabb.cpp \
-    $(SRC_DIR)/physics/collision.cpp \
-    $(SRC_DIR)/physics/rigidbody.cpp \
-    $(SRC_DIR)/audio/wav_loader.cpp \
-    $(SRC_DIR)/audio/mixer.cpp \
-    $(SRC_DIR)/assets/png_decoder.cpp \
-    $(SRC_DIR)/assets/obj_loader.cpp \
-    $(SRC_DIR)/assets/asset_loader.cpp \
-    $(SRC_DIR)/ecs/world.cpp \
-    $(SRC_DIR)/ecs/entity.cpp \
-    $(SRC_DIR)/ecs/beat_system.cpp \
-    $(SRC_DIR)/td/lexer.cpp \
-    $(SRC_DIR)/td/parser.cpp \
-    $(SRC_DIR)/td/compiler.cpp \
-    $(SRC_DIR)/td/vm.cpp
+	$(SRC_DIR)/core/logger.cpp \
+	$(SRC_DIR)/core/game_loop.cpp \
+	$(SRC_DIR)/renderer/gl_renderer.cpp \
+	$(SRC_DIR)/renderer/sprite_batch.cpp \
+	$(SRC_DIR)/renderer/camera.cpp \
+	$(SRC_DIR)/renderer/framebuffer.cpp \
+	$(SRC_DIR)/renderer/gl_shader.cpp \
+	$(SRC_DIR)/renderer/texture.cpp \
+	$(SRC_DIR)/renderer/mesh.cpp \
+	$(SRC_DIR)/physics/aabb.cpp \
+	$(SRC_DIR)/physics/collision.cpp \
+	$(SRC_DIR)/physics/rigidbody.cpp \
+	$(SRC_DIR)/audio/wav_loader.cpp \
+	$(SRC_DIR)/audio/mixer.cpp \
+	$(SRC_DIR)/assets/png_decoder.cpp \
+	$(SRC_DIR)/assets/obj_loader.cpp \
+	$(SRC_DIR)/assets/asset_loader.cpp \
+	$(SRC_DIR)/ecs/world.cpp \
+	$(SRC_DIR)/ecs/entity.cpp \
+	$(SRC_DIR)/ecs/beat_system.cpp
 
 WASM_MAIN_SRC = $(WASM_DIR)/emscripten_main.cpp
 
 EMCCFLAGS ?= -O2 -std=c++17 -Wall \
-             -s WASM=1 \
-             -s USE_WEBGL2=1 \
-             -s ALLOW_MEMORY_GROWTH=1 \
-             -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1 \
-             -s NO_EXIT_RUNTIME=1 \
-             -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP16","HEAPU8","getValue","setValue","addFunction"]' \
-             -s ALLOW_TABLE_GROWTH=1 \
-             -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks","_td_beat_start","_td_beat_stop","_td_beat_is_on_beat","_td_beat_get_count","_td_beat_get_next_beat_time","_td_beat_get_last_beat_time","_td_beat_register_hit","_td_beat_get_combo","_td_beat_get_best_combo","_td_beat_reset_combo","_td_beat_set_callback","_td_beat_play_sound","_td_beat_set_bpm"]' \
-             -I$(SRC_DIR)
+	     -s WASM=1 \
+	     -s USE_WEBGL2=1 \
+	     -s ALLOW_MEMORY_GROWTH=1 \
+	     -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1 \
+	     -s NO_EXIT_RUNTIME=1 \
+	     -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP16","HEAPU8","getValue","setValue","addFunction"]' \
+	     -s ALLOW_TABLE_GROWTH=1 \
+	     -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks","_td_beat_start","_td_beat_stop","_td_beat_is_on_beat","_td_beat_get_count","_td_beat_get_next_beat_time","_td_beat_get_last_beat_time","_td_beat_register_hit","_td_beat_get_combo","_td_beat_get_best_combo","_td_beat_reset_combo","_td_beat_set_callback","_td_beat_play_sound","_td_beat_set_bpm"]' \
+	     -I$(SRC_DIR)
 
 # =============================================================================
 # Targets

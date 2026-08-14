@@ -465,3 +465,98 @@ html, body {
 .controls-tip p + p {
     margin-top: 4px;
 }
+
+
+/* =============================================================================
+   Latest Release Ticker
+   Fetches /releases/tags/latest from the GitHub API. Pulled fresh on every
+   page load (cache-bust query string) + auto-refreshes every 5 minutes so
+   visitors always see the newest bug-fix / feature release.
+   ============================================================================= */
+#release-ticker {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 40;
+    background: linear-gradient(180deg, #0a0e14 0%, #050709 100%);
+    border-top: 1px solid #1f2937;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    color: #cbd5e1;
+}
+#release-ticker .ticker-inner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 14px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+#release-ticker .ticker-label {
+    display: flex; align-items: center; gap: 6px;
+    color: #67e8f9;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+#release-ticker .ticker-pulse {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #67e8f9;
+    box-shadow: 0 0 8px #67e8f9;
+    animation: ticker-pulse 1.8s ease-in-out infinite;
+}
+@keyframes ticker-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.85); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+}
+#release-ticker .ticker-content {
+    flex: 1;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #cbd5e1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#release-ticker .ticker-content .ticker-loading {
+    color: #64748b;
+    font-style: italic;
+}
+#release-ticker .ticker-content .ticker-version {
+    color: #67e8f9;
+    font-weight: 700;
+    margin-right: 8px;
+}
+#release-ticker .ticker-content .ticker-date {
+    color: #64748b;
+    font-size: 11px;
+    margin-right: 8px;
+}
+#release-ticker .ticker-content .ticker-body {
+    color: #94a3b8;
+}
+#release-ticker .ticker-content .ticker-error {
+    color: #f87171;
+    font-style: italic;
+}
+#release-ticker .ticker-link {
+    color: #67e8f9;
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border: 1px solid #67e8f9;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+#release-ticker .ticker-link:hover {
+    background: #67e8f9;
+    color: #0a0e14;
+}
+/* Push the canvas + console up so the ticker doesn't overlap them. */
+body { padding-bottom: 50px; }
+#engine-console { bottom: 50px !important; }

@@ -11,7 +11,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=5">
     <style>
         /* ---- Game selector bar ---- */
         #game-selector {
@@ -165,14 +165,33 @@
     </div>
 
     <!-- ====================================================================== -->
+    <!-- Latest Release Ticker                                                   -->
+    <!-- Fetches /releases/tags/latest from the GitHub API on page load + every -->
+    <!-- 5 minutes. Shows the newest bug-fix / feature release so visitors see   -->
+    <!-- at a glance what changed. Clicking it jumps to the release page.        -->
+    <!-- ====================================================================== -->
+    <div id="release-ticker">
+        <div class="ticker-inner">
+            <div class="ticker-label">
+                <span class="ticker-pulse"></span>
+                <span class="ticker-text">Latest release</span>
+            </div>
+            <div class="ticker-content" id="release-ticker-content">
+                <span class="ticker-loading">Loading latest release…</span>
+            </div>
+            <a class="ticker-link" id="release-ticker-link" href="https://github.com/hacvilke/td/releases/tag/latest" target="_blank" rel="noopener">View →</a>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
     <!-- Scripts                                                                 -->
     <!-- ====================================================================== -->
 
     <!-- Emscripten glue (output of `make web`). Loads td-engine.wasm. -->
-    <script src="td-engine.js?v=4"></script>
+    <script src="td-engine.js?v=5"></script>
 
     <!-- TDBridge - wraps Emscripten's Module with a clean JS API. -->
-    <script src="js_bridge.js?v=4"></script>
+    <script src="js_bridge.js?v=5"></script>
 
     <!-- Sample game script is injected at runtime based on ?game= query param. -->
 
@@ -187,7 +206,7 @@
                 label: 'VOID RUNNER',
                 title: 'VOID RUNNER',
                 subtitle: 'A space shooter on TD Engine',
-                script: 'examples/voidrunner.js?v=4',
+                script: 'examples/voidrunner.js?v=5',
                 controls: [
                     { key: 'A / D  ← →',   action: 'Move left / right' },
                     { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
@@ -207,7 +226,7 @@
                 label: 'PONG',
                 title: 'PONG',
                 subtitle: 'Classic 2-player paddle game',
-                script: 'examples/pong.js?v=4',
+                script: 'examples/pong.js?v=5',
                 controls: [
                     { key: 'W / S',          action: 'Left paddle (player)' },
                     { key: '↑ / ↓',          action: 'Right paddle (AI)' },
@@ -220,7 +239,7 @@
                 label: 'BEAT DEMO',
                 title: 'BEAT DEMO',
                 subtitle: 'Rhythm game — tap on the beat to score',
-                script: 'examples/beat_demo.js?v=4',
+                script: 'examples/beat_demo.js?v=5',
                 controls: [
                     { key: 'Space', action: 'Hit (catch the falling note)' },
                     { key: 'R',     action: 'Restart after game over' },
@@ -428,6 +447,111 @@
                     window.restartTDExample();
                 }
             });
+        })();
+    </script>
+
+    <!-- ================================================================== -->
+    <!-- Latest Release Ticker — fetches GitHub API on load + every 5 min.  -->
+    <!-- Auto-updates whenever a new bug fix / feature release is pushed.   -->
+    <!-- ================================================================== -->
+    <script>
+        (function () {
+            const REPO = 'hacvilke/td';
+            const API_URL = 'https://api.github.com/repos/' + REPO + '/releases/tags/latest';
+            const REFRESH_MS = 5 * 60 * 1000;  // 5 minutes
+
+            const contentEl = document.getElementById('release-ticker-content');
+            const linkEl = document.getElementById('release-ticker-link');
+            if (!contentEl || !linkEl) return;
+
+            // Extract the first non-empty, non-heading line from the release body
+            // and strip markdown to plain text.
+            function extractSummary(body) {
+                if (!body) return '';
+                const lines = body.split('\n');
+                for (const line of lines) {
+                    let t = line.trim();
+                    if (!t) continue;
+                    if (t.startsWith('#')) continue;          // skip markdown headings
+                    if (t.startsWith('```')) continue;        // skip code fences
+                    if (t.startsWith('-')) continue;          // skip bullet items
+                    // Strip markdown: bold **x**, italic *x*, code `x`, links [t](u) -> t
+                    t = t.replace(/\*\*(.+?)\*\*/g, '$1');
+                    t = t.replace(/\*(.+?)\*/g, '$1');
+                    t = t.replace(/`([^`]+)`/g, '$1');
+                    t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+                    return t.slice(0, 160);
+                }
+                return '';
+            }
+
+            // Render the release info into the ticker.
+            function renderRelease(release) {
+                if (!release) {
+                    contentEl.innerHTML = '<span class="ticker-error">Could not reach GitHub API</span>';
+                    return;
+                }
+                const version = release.name || release.tag_name || 'latest';
+                const published = release.published_at
+                    ? new Date(release.published_at).toLocaleDateString(
+                          undefined, { year: 'numeric', month: 'short', day: 'numeric' }
+                      )
+                    : '';
+                const summary = extractSummary(release.body);
+                const commitLine = summary
+                    ? ('<span class="ticker-body"> — ' + summary + '</span>')
+                    : '';
+                contentEl.innerHTML =
+                    '<span class="ticker-version">' + escapeHtml(version) + '</span>' +
+                    (published ? '<span class="ticker-date">' + published + '</span>' : '') +
+                    commitLine;
+                if (release.html_url) {
+                    linkEl.href = release.html_url;
+                }
+            }
+
+            function escapeHtml(s) {
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            // Fetch the release info. Cache-bust with a timestamp query param
+            // so we never get a stale CDN copy.
+            async function fetchRelease() {
+                const url = API_URL + '?_t=' + Date.now();
+                try {
+                    const r = await fetch(url, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/vnd.github+json' },
+                        cache: 'no-store',
+                    });
+                    if (!r.ok) {
+                        console.warn('[release-ticker] GitHub API returned', r.status);
+                        // Don't overwrite a previously-successful render with an error.
+                        if (!contentEl.dataset.lastOk) {
+                            contentEl.innerHTML =
+                                '<span class="ticker-error">GitHub API returned ' + r.status + '</span>';
+                        }
+                        return;
+                    }
+                    const release = await r.json();
+                    renderRelease(release);
+                    contentEl.dataset.lastOk = '1';
+                } catch (err) {
+                    console.warn('[release-ticker] fetch failed:', err);
+                    if (!contentEl.dataset.lastOk) {
+                        contentEl.innerHTML =
+                            '<span class="ticker-error">Offline — cannot reach GitHub</span>';
+                    }
+                }
+            }
+
+            // Initial fetch + recurring refresh.
+            fetchRelease();
+            setInterval(fetchRelease, REFRESH_MS);
         })();
     </script>
 </body>

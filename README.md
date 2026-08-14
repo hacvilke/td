@@ -71,21 +71,24 @@ TDBridge.onReady(() => {
 await TDBridge.init('game-canvas');
 ```
 
-For TypeScript development, import the typed wrapper:
+For TypeScript development, use the same `TDBridge` API (it's typed via JSDoc and works in both plain JS and TS files). See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for the full guide.
 
 ```typescript
-import { TDEngine, Key } from './web/engine-wrapper';
+// Same API works in TS — TDBridge is global, declared via JSDoc.
+await TDBridge.init('game-canvas');
 
-const engine = new TDEngine();
-await engine.init('game-canvas');
+const player = TDBridge.createEntity('Player');
+TDBridge.setEntityPosition(player, 100, 100);
+TDBridge.setEntitySprite(player, 32, 32, 1, 1, 1, 1);
 
-const player = engine.createEntity('Player');
-player.setPosition(100, 100);
-player.setSprite(32, 32, 1, 1, 1, 1);
-
-engine.onUpdate((dt, input) => {
-    if (input.isKeyDown(Key.D)) player.setPosition(player.x + dt * 200, player.y);
-});
+// Run a requestAnimationFrame loop that reads input + updates entities.
+function loop() {
+    if (TDBridge.isKeyDown(0x44)) {  // 'D' key
+        TDBridge.setEntityPosition(player, 100 + performance.now() / 10, 100);
+    }
+    requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 ```
 
 See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, working game.
@@ -96,12 +99,18 @@ See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, w
 - **3D Rendering**: Mesh rendering, lighting, materials, framebuffers
 - **Physics**: AABB collision detection, rigid body dynamics
 - **Audio**: WAV loading, software mixing (Web Audio on browser)
-- **Networking**: TCP/UDP via Winsock2 (WebSocket on browser via JS bridge)
 - **ECS**: Entity-Component-System architecture with bit-mask queries
-- **TD Scripting**: Custom scripting language with lexer, parser, compiler, and VM
 - **Asset Loading**: PNG decoder, OBJ loader, WAV loader
 - **Visual Editor**: Scene panel, inspector, asset browser, console (desktop)
 - **WebAssembly**: Browser support via Emscripten with zero external libraries
+- **Rhythm System**: BPM-synced beat tracker, on-beat detection, combo tracking
+
+**Planned** (see [`docs/MODULARITY_ROADMAP.md`](docs/MODULARITY_ROADMAP.md)):
+- **Scripting** (Lua VM, Tier 1) — replaces the removed experimental `td/` scripting language
+- **Networking** (ENet / WebRTC, Tier 1) — replaces the removed half-finished `net/` Winsock code
+- **Scene graph + serialization** (Tier 1) — for prefabs, scene inheritance, save/load
+- **Voxel chunks** (Tier 2) — for Minecraft-like games
+- **UGC marketplace + sandboxed scripts** (Tier 3) — for Roblox-like games
 
 ## Architecture
 
@@ -112,7 +121,7 @@ See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, w
 ├─────────────────────────────────────────────────────────────┤
 │                       Engine API                             │
 ├───────────┬───────────┬───────────┬───────────┬─────────────┤
-│  Renderer │  Physics  │   Audio   │ Networking│   Assets    │
+│  Renderer │  Physics  │   Audio   │   ECS     │   Assets    │
 ├───────────┴───────────┴───────────┴───────────┴─────────────┤
 │                    Core (Math, Memory, Logger)               │
 ├─────────────────────────────────────────────────────────────┤
@@ -131,24 +140,25 @@ td-engine/
 │   ├── renderer/       # OpenGL 3.3, sprites, meshes, cameras
 │   ├── physics/        # AABB, collision, rigid bodies
 │   ├── audio/          # WAV loading, mixing, playback
-│   ├── net/            # Sockets, server, client (desktop)
 │   ├── assets/         # PNG decoder, OBJ loader
-│   ├── ecs/            # Entity, component, system, world
-│   └── td/             # Scripting language
+│   └── ecs/            # Entity, component, system, world, beat system
 ├── editor/             # Visual editor application (desktop)
 ├── examples/           # Pong and platformer games (C++ desktop)
-├── tests/              # Unit tests
+├── tests/              # Unit tests + regression tests
 ├── assets/shaders/     # GLSL shader files
-├── wasm/               # WebAssembly bridge (Part 7)
+├── docs/               # PUBLIC_APIS.md, RHYTHM_MECHANICS.md, MODULARITY_ROADMAP.md
+├── wasm/               # WebAssembly bridge
 │   ├── emscripten_main.cpp  # Emscripten entry point (replaces win32_*.cpp)
 │   ├── js_bridge.js         # Loads td-engine.wasm, sets up canvas + input + audio
 │   └── README.md            # Build + run instructions
 └── web/                # Browser-facing files
-    ├── index.html           # Standalone web player
+    ├── index.html           # Standalone web player (with game picker + release ticker)
     ├── style.css            # Dark theme + #00D4FF accent
-    ├── engine-wrapper.ts    # TypeScript public API for web game devs
+    ├── GETTING_STARTED.md   # 11-section guide for web game developers
     └── examples/
-        └── voidrunner.js    # VOID RUNNER — vertical space shooter (pure JS)
+        ├── voidrunner.js    # VOID RUNNER — vertical space shooter
+        ├── pong.js          # Pong — classic 2-player paddle game
+        └── beat_demo.js     # BEAT DEMO — rhythm game using the BeatTracker
 ```
 
 ## Building
@@ -246,7 +256,7 @@ See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, w
 4. Run a `requestAnimationFrame` loop that reads input, updates game state in JS, and pushes changes to the engine via the cwrap'd functions.
 5. The engine's WASM main loop (driven by `emscripten_set_main_loop`) renders every frame.
 
-For TypeScript, import `TDEngine` from [`web/engine-wrapper.ts`](web/engine-wrapper.ts) for a clean, typed API with `EntityHandle`, `InputState`, and `Key` enums.
+For TypeScript, use the same `TDBridge` global — it's declared via JSDoc and works in both plain JS and TS files. See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for the full API reference.
 
 ## What does NOT change between desktop and web
 
@@ -255,10 +265,9 @@ The engine's portable subsystems compile **unchanged** on both targets:
 - `src/core/` — math, logger, game loop
 - `src/renderer/` — OpenGL 3.3 / WebGL 2 (via Emscripten's GL shim)
 - `src/physics/` — AABB, collision, rigid bodies
-- `src/ecs/` — World, Entity, Component, System
+- `src/ecs/` — World, Entity, Component, System, BeatSystem
 - `src/audio/mixer.cpp` — software mixer (output device differs)
 - `src/assets/` — PNG, OBJ, WAV loaders (Emscripten provides a virtual filesystem)
-- `src/td/` — scripting language VM
 
 Three files have small `#ifdef __EMSCRIPTEN__` blocks for platform-specific glue (GL function loading, timestamp, console coloring) — see [`wasm/README.md`](wasm/README.md) for details.
 

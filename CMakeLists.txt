@@ -67,11 +67,14 @@ set(ENGINE_PORTABLE_SOURCES
     src/ecs/world.cpp
     src/ecs/entity.cpp
     src/ecs/beat_system.cpp
-    src/td/lexer.cpp
-    src/td/parser.cpp
-    src/td/compiler.cpp
-    src/td/vm.cpp
 )
+
+# NOTE: src/td/ (custom scripting VM) and src/net/ (Winsock socket/server/client)
+# were removed in the engine cleanup pass. The scripting VM was never wired up
+# to a C API or JS bridge; networking was never used by any example/editor/test.
+# Both will be re-added properly per docs/MODULARITY_ROADMAP.md:
+#   - scripting: Lua VM (Tier 1) instead of a custom language
+#   - networking: ENet or WebRTC (Tier 1) instead of raw Winsock
 
 # =============================================================================
 if(TD_BUILD_WEB)
@@ -147,7 +150,6 @@ else()
         src/platform/win32_window.cpp
         src/platform/win32_input.cpp
         src/audio/audio_engine.cpp
-        src/net/socket.cpp
     )
 
     # Static library form of the engine - shared between editor, examples,
@@ -157,7 +159,7 @@ else()
 
     if(WIN32)
         target_link_libraries(td-engine PUBLIC
-            opengl32 gdi32 user32 winmm ws2_32
+            opengl32 gdi32 user32 winmm
         )
         target_compile_definitions(td-engine PUBLIC WIN32 _WINDOWS)
     else()
