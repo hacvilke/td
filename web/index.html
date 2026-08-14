@@ -13,15 +13,15 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>TD Engine - Web Player</title>
-    <link rel="stylesheet" href="style.css?v=21">
+    <link rel="stylesheet" href="style.css?v=22">
     <!-- Server URL router: lets users self-host the engine on their own
          VPN/server/CDN by adding ?server=<URL> to the page URL.
          Loaded BEFORE js_bridge.js so the bridge can use TDServerRouter.resolveAsset(). -->
-    <script src="server_router.js?v=21"></script>
+    <script src="server_router.js?v=22"></script>
     <!-- Deprecated API tracker + filter console tabs (Godot-like error feedback).
          Wraps TDBridge.onLog to classify [DEPRECATED] messages and adds
          All|Info|Warning|Error|Deprecated filter tabs to the on-page console. -->
-    <script src="deprecated_tracker.js?v=21"></script>
+    <script src="deprecated_tracker.js?v=22"></script>
     <script>
       // Rebase all asset URLs on the chosen server BEFORE any <script src>
       // tags execute. We patch document.createElement to rewrite script src
@@ -411,16 +411,16 @@
     <!-- TDBridge - wraps Emscripten's Module with a clean JS API.
          This script defines window.TDBridge but does NOT yet load WASM.
          TDBridge.init(canvasId) loads td-engine.js + .wasm on demand. -->
-    <script src="js_bridge.js?v=21"></script>
+    <script src="js_bridge.js?v=22"></script>
     <!-- Modular API layer: wraps the low-level TDBridge/Module._td_* C API
          in a clean, Godot-like namespace. Use TDEngine.ecs.create(),
          TDEngine.input.isKeyDown(), TDEngine.beat.start(), etc.
          Old TDBridge API still works (with a one-time deprecation warning). -->
-    <script src="td_api.js?v=21"></script>
+    <script src="td_api.js?v=22"></script>
     <!-- Network module: WebSocket transport + RPC + saved server profiles.
          Use TDEngine.net.connect(url) or TDNet.connect(url) for multiplayer.
          Adds a "Multiplayer" link to the top bar that opens the server config panel. -->
-    <script src="net_websocket.js?v=21"></script>
+    <script src="net_websocket.js?v=22"></script>
 
     <!-- Sample game script is injected at runtime based on ?game= query param. -->
 
@@ -435,7 +435,7 @@
                 label: 'VOID RUNNER',
                 title: 'VOID RUNNER',
                 subtitle: 'A space shooter on TD Engine',
-                script: 'examples/voidrunner.js?v=21',
+                script: 'examples/voidrunner.js?v=22',
                 controls: [
                     { key: 'A / D  ← →',   action: 'Move left / right' },
                     { key: 'W / S  ↑ ↓',   action: 'Move up / down' },
@@ -455,7 +455,7 @@
                 label: 'PONG',
                 title: 'PONG',
                 subtitle: 'Classic 2-player paddle game',
-                script: 'examples/pong.js?v=21',
+                script: 'examples/pong.js?v=22',
                 controls: [
                     { key: 'W / S',          action: 'Left paddle (player)' },
                     { key: '↑ / ↓',          action: 'Right paddle (AI)' },
@@ -468,7 +468,7 @@
                 label: 'BEAT DEMO',
                 title: 'BEAT DEMO',
                 subtitle: 'Rhythm game — tap on the beat to score',
-                script: 'examples/beat_demo.js?v=21',
+                script: 'examples/beat_demo.js?v=22',
                 controls: [
                     { key: 'Space', action: 'Hit (catch the falling note)' },
                     { key: 'R',     action: 'Restart after game over' },
@@ -483,7 +483,7 @@
                 label: 'SCRIPT ARENA',
                 title: 'SCRIPT ARENA',
                 subtitle: 'tdscript VM + i18n — Wave 1/2 module showcase',
-                script: 'examples/script_arena.js?v=21',
+                script: 'examples/script_arena.js?v=22',
                 controls: [
                     { key: '1 / Space (hold)', action: 'Spawn particle burst (calls tdscript spawn_burst)' },
                     { key: '2',                action: 'Toggle gravity (tdscript state)' },
@@ -498,6 +498,29 @@
                      'Spawning, palette, gravity, and clearing are all driven by a tdscript source string compiled at boot.</p>' +
                      '<p><span style="color:#ffd24a">●</span> <b>i18n / Localization</b> — 5 locale tables loaded into the engine. ' +
                      'Press <b>L</b> to cycle; Arabic flips the HUD to RTL via <code>td_i18n_is_rtl()</code>.</p>',
+            },
+            'net': {
+                label: 'NET ARENA',
+                title: 'NET ARENA',
+                subtitle: 'Wave 3 showcase — modular API + deprecated tracker + WebSocket networking',
+                script: 'examples/net_arena.js?v=22',
+                controls: [
+                    { key: 'WASD / Arrows', action: 'Move (tag red drones to score)' },
+                    { key: 'D',             action: 'Trigger deprecated API warning (purple tab +1)' },
+                    { key: 'N',             action: 'Toggle WebSocket network echo (RTT measurement)' },
+                    { key: 'P',             action: 'Pause / resume' },
+                    { key: 'R',             action: 'Restart' },
+                    { key: 'Esc',           action: 'Engine pause overlay' },
+                ],
+                tip: '<p><b>Live demo of the four Wave 3 web modules (v=18→v=21):</b></p>' +
+                     '<p><span style="color:#67e8f9">●</span> <b>Modular TDEngine API (v=20)</b> — all entity creation, movement, ' +
+                     'and rendering goes through TDEngine.ecs.* / TDEngine.input.* instead of raw Module._td_*.</p>' +
+                     '<p><span style="color:#c084fc">●</span> <b>Deprecated API Tracker (v=19)</b> — press D to fire a deprecated ' +
+                     'warning. Watch the purple Deprecated tab in the bottom console increment.</p>' +
+                     '<p><span style="color:#4ade80">●</span> <b>Network Module (v=21)</b> — press N to connect to a WebSocket ' +
+                     'echo server; HUD shows live RTT.</p>' +
+                     '<p><span style="color:#fbbf24">●</span> <b>Server URL Router (v=18)</b> — HUD shows where the engine assets ' +
+                     'are loaded from (this site or your own server if ?server= was set).</p>',
             },
         };
 
