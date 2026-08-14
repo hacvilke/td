@@ -401,6 +401,6 @@
   }
   console.log('===============================================\n');
 
-  if (failed > 0 && typeof process !== 'undefined') process.exitCode = 1;
+  if (typeof process !== 'undefined') process.exit(failed > 0 ? 1 : 0);
 
 })(typeof window !== 'undefined' ? window : this);

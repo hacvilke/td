@@ -397,7 +397,9 @@
     }
     console.log('=================================');
     global.__tdNetTestResult = { passed: passed, failed: failed, failures: failures };
-    if (failed > 0 && typeof process !== 'undefined') process.exit(1);
+    // Force exit — net_websocket.js schedules timers that keep Node's
+    // event loop alive; in headless tests we want a clean exit.
+    if (typeof process !== 'undefined') process.exit(failed > 0 ? 1 : 0);
   }, 1500);
 
 })(typeof window !== 'undefined' ? window : this);

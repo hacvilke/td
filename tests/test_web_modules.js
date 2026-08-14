@@ -322,6 +322,9 @@
     console.log('=================================');
     // Expose result for headless runners
     global.__tdTestResult = { passed: passed, failed: failed, failures: failures };
+    // Force exit — deprecated_tracker.js polls every 200ms for TDBridge,
+    // which keeps Node's event loop alive forever in headless tests.
+    if (typeof process !== 'undefined') process.exit(failed > 0 ? 1 : 0);
   }, 100);
 
 })(typeof window !== 'undefined' ? window : this);
