@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="TD Engine 3D Sandbox — a Unity/Unreal-style template exercising every TD Engine subsystem: 3D physics, ECS, input, audio, i18n, persistence, beat, shader graph, networking.">
+    <title>TD Sandbox — Engine Feature Tour</title>
+    <link rel="stylesheet" href="style.css?v=1">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
+</head>
+<body>
+
+<!-- ============================================================
+     Loading screen
+     ============================================================ -->
+<div id="loading-screen">
+    <div class="loading-content">
+        <div class="loading-logo">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+                <rect x="17" y="4"  width="30" height="6" rx="1.5" fill="#67e8f9"/>
+                <rect x="29" y="4"  width="6"  height="30" rx="1.5" fill="#67e8f9"/>
+                <path d="M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z" fill="#67e8f9"/>
+                <path d="M 4 54 Q 16 51, 32 54 T 60 54" stroke="#67e8f9" stroke-width="2.5" fill="none" opacity="0.45"/>
+            </svg>
+        </div>
+        <h1>TD Sandbox</h1>
+        <p class="loading-sub">Engine Feature Tour</p>
+        <div class="loading-bar"><div id="loading-bar-fill"></div></div>
+        <div id="loading-status">Booting engine…</div>
+    </div>
+</div>
+
+<!-- ============================================================
+     Game viewport (WebGL2 canvas)
+     ============================================================ -->
+<canvas id="game-canvas"></canvas>
+
+<!-- ============================================================
+     HUD: top bar
+     ============================================================ -->
+<div id="hud-top">
+    <div class="hud-left">
+        <span class="brand">TD SANDBOX</span>
+        <span class="sep">/</span>
+        <span class="locale" id="hud-locale">EN</span>
+        <button id="btn-locale" title="Switch language">🌐</button>
+    </div>
+    <div class="hud-center">
+        <span class="stat"><b id="hud-fps">--</b> FPS</span>
+        <span class="sep">·</span>
+        <span class="stat"><b id="hud-bodies">--</b> bodies</span>
+        <span class="sep">·</span>
+        <span class="stat"><b id="hud-contacts">--</b> contacts</span>
+        <span class="sep">·</span>
+        <span class="stat"><b id="hud-tris">--</b> tris</span>
+    </div>
+    <div class="hud-right">
+        <span id="hud-beat" class="beat-indicator">♪ <b id="hud-bpm">120</b></span>
+        <button id="btn-tutorial" title="Show tutorial">?</button>
+        <button id="btn-save" title="Save scene">💾</button>
+        <button id="btn-load" title="Load scene">📂</button>
+        <button id="btn-reset" title="Reset scene">↺</button>
+    </div>
+</div>
+
+<!-- ============================================================
+     HUD: bottom bar (controls hint + mode)
+     ============================================================ -->
+<div id="hud-bottom">
+    <div class="control-hints">
+        <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+        <span data-i18n="hint.move">Move</span>
+        <span class="sep">·</span>
+        <kbd>Space</kbd>
+        <span data-i18n="hint.jump">Jump</span>
+        <span class="sep">·</span>
+        <kbd>Mouse</kbd>
+        <span data-i18n="hint.look">Look</span>
+        <span class="sep">·</span>
+        <kbd>Click</kbd>
+        <span data-i18n="hint.shoot">Shoot</span>
+        <span class="sep">·</span>
+        <kbd>R</kbd>
+        <span data-i18n="hint.reset">Reset</span>
+        <span class="sep">·</span>
+        <kbd>1</kbd>–<kbd>4</kbd>
+        <span data-i18n="hint.spawn">Spawn</span>
+        <span class="sep">·</span>
+        <kbd>B</kbd>
+        <span data-i18n="hint.beat">Toggle beat</span>
+        <span class="sep">·</span>
+        <kbd>F2</kbd>
+        <span data-i18n="hint.godmode">God mode</span>
+    </div>
+</div>
+
+<!-- ============================================================
+     Spawn menu (right side, palette of physics props)
+     ============================================================ -->
+<div id="spawn-menu">
+    <div class="spawn-title" data-i18n="spawn.title">Spawn</div>
+    <button class="spawn-btn" data-spawn="box">
+        <span class="spawn-icon">📦</span>
+        <span class="spawn-label" data-i18n="spawn.box">Box</span>
+    </button>
+    <button class="spawn-btn" data-spawn="sphere">
+        <span class="spawn-icon">🔵</span>
+        <span class="spawn-label" data-i18n="spawn.sphere">Sphere</span>
+    </button>
+    <button class="spawn-btn" data-spawn="capsule">
+        <span class="spawn-icon">💊</span>
+        <span class="spawn-label" data-i18n="spawn.capsule">Capsule</span>
+    </button>
+    <button class="spawn-btn" data-spawn="stack">
+        <span class="spawn-icon">🧱</span>
+        <span class="spawn-label" data-i18n="spawn.stack">Stack</span>
+    </button>
+    <button class="spawn-btn" data-spawn="pendulum">
+        <span class="spawn-icon">🪀</span>
+        <span class="spawn-label" data-i18n="spawn.pendulum">Pendulum</span>
+    </button>
+    <button class="spawn-btn" data-spawn="energy">
+        <span class="spawn-icon">⚡</span>
+        <span class="spawn-label" data-i18n="spawn.energy">Energy ball</span>
+    </button>
+</div>
+
+<!-- ============================================================
+     Tutorial overlay (guided tour of engine features)
+     ============================================================ -->
+<div id="tutorial-overlay" class="hidden">
+    <div class="tutorial-card">
+        <div class="tutorial-header">
+            <span class="tutorial-step" id="tutorial-step-num">1 / 8</span>
+            <span class="tutorial-title" id="tutorial-title">Welcome</span>
+            <button id="tutorial-close" class="tutorial-close">✕</button>
+        </div>
+        <div class="tutorial-body" id="tutorial-body"></div>
+        <div class="tutorial-tags" id="tutorial-tags"></div>
+        <div class="tutorial-footer">
+            <button id="tutorial-prev" class="tut-btn">← Prev</button>
+            <div class="tutorial-dots" id="tutorial-dots"></div>
+            <button id="tutorial-next" class="tut-btn">Next →</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     Crash / error boundary
+     ============================================================ -->
+<div id="crash-screen">
+    <h2>TD Sandbox crashed</h2>
+    <p id="crash-message"></p>
+    <pre id="crash-stack"></pre>
+    <button id="crash-reload">Reload</button>
+</div>
+
+<!-- ============================================================
+     Engine scripts.
+     Load order matters: engine bridge first, then the game.
+     If td-engine.js (compiled WASM) is present it is auto-loaded
+     by js_bridge.js.  When absent, the game falls back to a
+     pure-JS reference physics implementation that exercises the
+     same TDEngine.* API surface.
+     ============================================================ -->
+<script src="../../web/error_boundary.js"></script>
+<script>
+    // Tell the engine to look for the compiled WASM in the standard
+    // location relative to this page.  When serving via `td serve`,
+    // the wasm build lives at /td-engine.wasm.  When opening this
+    // file directly, the bridge will fall back to JS mode.
+    window.TD_ENGINE_ROOT = '../../web/';
+</script>
+<script src="js_bridge_shim.js"></script>
+<script src="../../web/td_api.js"></script>
+<script src="../../web/persistence.js"></script>
+
+<!-- Game code, in dependency order -->
+<script src="game/i18n.js"></script>
+<script src="game/audio.js"></script>
+<script src="game/input.js"></script>
+<script src="game/shaders.js"></script>
+<script src="game/physics_js.js"></script>
+<script src="game/renderer.js"></script>
+<script src="game/ecs.js"></script>
+<script src="game/beat.js"></script>
+<script src="game/network_stub.js"></script>
+<script src="game/tutorial.js"></script>
+<script src="game/game.js"></script>
+
+</body>
+</html>

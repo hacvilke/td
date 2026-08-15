@@ -317,11 +317,11 @@
         <span>TD ENGINE &middot; DOCS</span>
     </a>
     <div class="links">
-        <a href="index.html">Home</a>
+        <a href="examples/3d-showcase/index.html">3D Demo</a>
         <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
         <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener">CI</a>
         <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">GitHub</a>
-        <a href="index.html" class="cta-primary">Home &rarr;</a>
+        <a href="examples/3d-showcase/index.html" class="cta-primary">Play Demo &rarr;</a>
     </div>
 </nav>
 
@@ -423,6 +423,18 @@
     The fastest way to get started is to clone the repo, drop the <code>web/</code> folder into your project,
     and boot the engine on a canvas. Here's the minimal pattern:
 </p>
+
+<div class="td-callout info" style="margin-bottom:24px;">
+    <b>New: 3D Sandbox Demo</b> &nbsp;
+    &mdash; a playable 3D physics playground that exercises every engine subsystem
+    (physics, ECS, input, audio, i18n, persistence, beat, shaders, networking hooks)
+    in a single scene.  <a href="examples/3d-showcase/index.html"><b>Play the demo &rarr;</b></a>
+    &nbsp; or browse the source at <a href="https://github.com/hacvilke/td/tree/main/examples/3d-showcase" target="_blank" rel="noopener"><code>examples/3d-showcase/</code></a>.
+    The demo runs without the compiled WASM &mdash; a pure-JS fallback physics engine kicks in
+    so you can play immediately.  When you run <code>td serve</code>, the same demo uses the
+    real C++ physics backend automatically.
+</div>
+
 <pre><span class="com">// 1. Load the engine scripts in your HTML &lt;head&gt;</span>
 &lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"js_bridge.js?v=24"</span>&gt;&lt;/<span class="kw">script</span>&gt;
 &lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"td_api.js?v=24"</span>&gt;&lt;/<span class="kw">script</span>&gt;
