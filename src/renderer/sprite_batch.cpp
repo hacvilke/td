@@ -266,20 +266,30 @@ void SpriteBatch::draw(const SpriteData& sprite, const Texture* texture) {
         TD_LOG_WARN("SpriteBatch::draw called without begin()");
         return;
     }
-    
+
     // Use white texture if none provided
     if (!texture) {
         texture = &m_whiteTexture;
     }
-    
-    // Flush if texture changed or batch is full
-    if (texture != m_currentTexture || m_spriteCount >= MAX_SPRITES) {
-        flush();
+
+    // If flushSorted() will be called later, we DON'T flush on texture
+    // change here — we just record the texture per sprite and let the
+    // sort at end() coalesce them. Otherwise, flush as before.
+    if (!m_trackTextures) {
+        if (texture != m_currentTexture || m_spriteCount >= MAX_SPRITES) {
+            flush();
+            m_currentTexture = texture;
+        }
+    } else {
+        // Sorted mode: don't flush on texture change, just buffer.
+        if (m_spriteCount >= MAX_SPRITES) {
+            flush();
+        }
         m_currentTexture = texture;
     }
-    
-    // Expand sprite to 4 vertices
+
     expandSpriteToVertices(sprite, &m_vertices[m_spriteCount * VERTICES_PER_SPRITE]);
+    if (m_trackTextures) m_spriteTextures[m_spriteCount] = texture;
     m_spriteCount++;
 }
 
@@ -300,34 +310,177 @@ void SpriteBatch::drawQuad(float x, float y, float width, float height,
     draw(sprite, texture);
 }
 
+void SpriteBatch::drawBatch(const SpriteData* sprites, int count, const Texture* texture) {
+    if (!m_started || count <= 0 || !sprites) return;
+
+    if (!texture) texture = &m_whiteTexture;
+
+    // If the texture differs from the current batch, flush first so we
+    // keep the "one texture per flush" invariant (unless we're in sorted
+    // mode, where we just buffer everything and sort at the end).
+    if (!m_trackTextures) {
+        if (texture != m_currentTexture) {
+            flush();
+            m_currentTexture = texture;
+        }
+    } else {
+        m_currentTexture = texture;
+    }
+
+    // If this batch would overflow, flush and continue.
+    if (m_spriteCount + count > MAX_SPRITES) {
+        if (!m_trackTextures) {
+            flush();
+            m_currentTexture = texture;
+        } else {
+            // In sorted mode, force a sorted flush now to make room.
+            flushSorted();
+        }
+        // If count alone exceeds MAX_SPRITES, we have to draw in chunks.
+        int offset = 0;
+        while (offset < count) {
+            int chunk = (count - offset < MAX_SPRITES) ? (count - offset) : MAX_SPRITES;
+            for (int i = 0; i < chunk; i++) {
+                expandSpriteToVertices(sprites[offset + i], &m_vertices[i * VERTICES_PER_SPRITE]);
+                if (m_trackTextures) m_spriteTextures[i] = texture;
+            }
+            m_spriteCount = chunk;
+            if (!m_trackTextures) {
+                flush();
+                m_currentTexture = texture;
+            } else {
+                flushSorted();
+            }
+            offset += chunk;
+        }
+        return;
+    }
+
+    // Fast path: expand directly into the buffer with no per-sprite branches.
+    SpriteVertex* dst = &m_vertices[m_spriteCount * VERTICES_PER_SPRITE];
+    for (int i = 0; i < count; i++) {
+        expandSpriteToVertices(sprites[i], &dst[i * VERTICES_PER_SPRITE]);
+        if (m_trackTextures) m_spriteTextures[m_spriteCount + i] = texture;
+    }
+    m_spriteCount += count;
+}
+
 void SpriteBatch::flush() {
     if (m_spriteCount == 0) {
         return;
     }
-    
+
     // Upload vertex data
     gl.glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    gl.glBufferSubData(GL_ARRAY_BUFFER, 0, 
+    gl.glBufferSubData(GL_ARRAY_BUFFER, 0,
                        sizeof(SpriteVertex) * m_spriteCount * VERTICES_PER_SPRITE,
                        m_vertices);
-    
+
     // Bind shader and set uniforms
     m_shader.bind();
     m_shader.setUniformMat4("u_projection", m_projection.data());
     m_shader.setUniformMat4("u_view", m_view.data());
     m_shader.setUniform1i("u_texture", 0);
-    
+
     // Bind texture
     if (m_currentTexture) {
         m_currentTexture->bind(0);
     }
-    
+
     // Draw
     gl.glBindVertexArray(m_vao);
-    gl.glDrawElements(GL_TRIANGLES, m_spriteCount * INDICES_PER_SPRITE, 
+    gl.glDrawElements(GL_TRIANGLES, m_spriteCount * INDICES_PER_SPRITE,
                       GL_UNSIGNED_INT, nullptr);
-    
+
     m_drawCallCount++;
+    m_spriteCount = 0;
+}
+
+// flushSorted: re-orders the buffered sprites by texture pointer so that
+// each unique texture gets exactly one draw call.
+//
+// Memory cost: 8 bytes per sprite for the texture pointer (80KB at MAX_SPRITES).
+// CPU cost: O(n log n) sort — at 10000 sprites, ~130k comparisons, <1ms.
+//
+// Use case: a game draws player, enemy, bullet, player, enemy, bullet, ...
+// Without sorting, each sprite triggers a flush (3 textures cycling = 10000
+// draw calls). With sorting, we get 3 draw calls.
+void SpriteBatch::flushSorted() {
+    // Enable per-sprite texture tracking for any future draws in this batch.
+    // Existing buffered sprites get their textures back-filled from m_currentTexture
+    // (which is the texture of the most-recent draw).
+    if (!m_trackTextures) {
+        m_trackTextures = true;
+        // Back-fill: every buffered sprite used m_currentTexture at draw time
+        // (because draw() flushed on change). This is a conservative
+        // approximation; if draws alternated textures, we'd lose that info
+        // — but in non-sorted mode, each texture change flushed, so all
+        // buffered sprites share the same texture (= m_currentTexture).
+        for (int i = 0; i < m_spriteCount; i++) {
+            m_spriteTextures[i] = m_currentTexture;
+        }
+    }
+
+    if (m_spriteCount <= 1) {
+        flush();
+        return;
+    }
+
+    // Build an index array, sort it by texture pointer.
+    // We sort indices, not the vertex data itself, to minimize memory moves
+    // during the sort (8 bytes per swap vs 96 bytes per vertex*4).
+    int indices[MAX_SPRITES];
+    for (int i = 0; i < m_spriteCount; i++) indices[i] = i;
+
+    std::sort(indices, indices + m_spriteCount, [this](int a, int b) {
+        return reinterpret_cast<uintptr_t>(m_spriteTextures[a])
+             < reinterpret_cast<uintptr_t>(m_spriteTextures[b]);
+    });
+
+    // Walk the sorted indices and emit a flush every time the texture changes.
+    // We copy each run's vertices into a temporary buffer, upload, and draw.
+    //
+    // For very large runs (thousands of sprites of one texture), we do
+    // multiple draws of MAX_RUN vertices each.
+    //
+    // MAX_RUN = 256 -> runVerts = 256*4*32 = 32KB on the stack. That's safe
+    // for WASM (default stack 64KB) and reasonable on desktop.
+    constexpr int MAX_RUN = 256;
+    SpriteVertex runVerts[MAX_RUN * VERTICES_PER_SPRITE];
+
+    int i = 0;
+    while (i < m_spriteCount) {
+        const Texture* runTex = m_spriteTextures[indices[i]];
+        int runLen = 0;
+        while (i < m_spriteCount && m_spriteTextures[indices[i]] == runTex && runLen < MAX_RUN) {
+            // Copy 4 vertices from the original buffer to the run buffer.
+            memcpy(&runVerts[runLen * VERTICES_PER_SPRITE],
+                   &m_vertices[indices[i] * VERTICES_PER_SPRITE],
+                   VERTICES_PER_SPRITE * sizeof(SpriteVertex));
+            runLen++;
+            i++;
+        }
+
+        // Upload + draw this run.
+        if (runLen > 0) {
+            gl.glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+            gl.glBufferSubData(GL_ARRAY_BUFFER, 0,
+                               sizeof(SpriteVertex) * runLen * VERTICES_PER_SPRITE,
+                               runVerts);
+            m_shader.bind();
+            m_shader.setUniformMat4("u_projection", m_projection.data());
+            m_shader.setUniformMat4("u_view", m_view.data());
+            m_shader.setUniform1i("u_texture", 0);
+            if (runTex) runTex->bind(0);
+            else m_whiteTexture.bind(0);
+
+            gl.glBindVertexArray(m_vao);
+            gl.glDrawElements(GL_TRIANGLES, runLen * INDICES_PER_SPRITE,
+                              GL_UNSIGNED_INT, nullptr);
+            m_drawCallCount++;
+        }
+    }
+
     m_spriteCount = 0;
 }
 

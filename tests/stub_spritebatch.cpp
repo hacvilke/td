@@ -13,11 +13,13 @@ bool SpriteBatch::init() { return true; }
 void SpriteBatch::shutdown() {}
 void SpriteBatch::begin(const Mat4&, const Mat4&) {}
 void SpriteBatch::draw(const SpriteData&, const Texture*) {}
+void SpriteBatch::drawBatch(const SpriteData*, int, const Texture*) {}
 void SpriteBatch::drawQuad(float, float, float, float,
                            float, float, float, float,
                            const Texture*) {}
 void SpriteBatch::end() {}
 void SpriteBatch::flush() {}
+void SpriteBatch::flushSorted() {}
 
 void SpriteBatch::expandSpriteToVertices(const SpriteData&, SpriteVertex*) {}
 

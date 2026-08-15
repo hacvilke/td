@@ -1,0 +1,11 @@
+{
+  "name": "__GAME_NAME__",
+  "version": "1.0.0",
+  "description": "A game built with TD Engine.",
+  "publisher": "Unknown Publisher",
+  "id": "__GAME_ID__",
+  "icon": null,
+  "url": "",
+  "out": null,
+  "bundle_runtime": false
+}

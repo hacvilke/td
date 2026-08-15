@@ -1,0 +1,12 @@
+{
+  "name": "td-engine-cli",
+  "version": "0.1.0",
+  "description": "TD Engine command-line interface",
+  "bin": {
+    "td": "tools/cli/td.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "license": "MIT"
+}

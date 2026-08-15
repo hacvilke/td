@@ -40,6 +40,13 @@ jobs:
           node tests/test_persistence.js
           echo "=== test_net_peer.js ==="
           node tests/test_net_peer.js
+          echo "=== test_net_interpolation.js ==="
+          node tests/test_net_interpolation.js
+          echo "=== test_net_auth_server.js ==="
+          npm install --no-save ws
+          node tests/test_net_auth_server.js
+          echo "=== bench_render.js ==="
+          node tests/bench_render.js
 
   wasm:
     name: Build WebAssembly
