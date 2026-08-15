@@ -483,9 +483,14 @@
       });
     });
 
-    // Save / load / reset.
+    // Save / load / export / import / reset.
     document.getElementById('btn-save').addEventListener('click', saveScene);
     document.getElementById('btn-load').addEventListener('click', loadScene);
+    document.getElementById('btn-export').addEventListener('click', exportSceneFile);
+    document.getElementById('btn-import').addEventListener('click', () => {
+      document.getElementById('import-file-input').click();
+    });
+    document.getElementById('import-file-input').addEventListener('change', importSceneFile);
     document.getElementById('btn-reset').addEventListener('click', resetScene);
 
     // Locale switcher.
@@ -581,6 +586,77 @@
     // Re-spawn initial props.
     spawnInitialProps();
     toast('toast.reset');
+  }
+
+  // ---- Export / Import scene as JSON file --------------------------------
+  // Ported from the Tariu physics sandbox pattern: instead of just saving
+  // to localStorage, let the user download the scene as a .tdscene.json
+  // file they can share, version-control, or reload later.  The format
+  // matches what saveScene() writes to localStorage so either source can
+  // feed loadScene().
+  function exportSceneFile() {
+    const state = {
+      format: 'td-sandbox-scene',
+      version: 1,
+      savedAt: new Date().toISOString(),
+      entities: TDS.ecs.serialize(),
+      playerPos: TDE.physics.getPosition(STATE.player.bodyId),
+    };
+    const json = JSON.stringify(state, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'td-sandbox-' + Date.now() + '.tdscene.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('toast.saved');
+    TDS.audio.play('save');
+  }
+
+  function importSceneFile(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const state = JSON.parse(e.target.result);
+        if (!state || !Array.isArray(state.entities)) {
+          throw new Error('Not a TD Sandbox scene file');
+        }
+        resetScene();
+        for (const ent of state.entities) {
+          const entity = TDS.ecs.create(ent.name, ent.kind);
+          const bodyId = TDE.physics.addBody(1, ent.position.x, ent.position.y, ent.position.z, false);
+          if (ent.collider) {
+            if (ent.collider.type === 'sphere')
+              TDE.physics.setSphereCollider(bodyId, ent.collider.radius);
+            else if (ent.collider.type === 'box')
+              TDE.physics.setBoxCollider(bodyId, ent.collider.hx, ent.collider.hy, ent.collider.hz);
+            else if (ent.collider.type === 'capsule')
+              TDE.physics.setCapsuleCollider(bodyId, ent.collider.radius, ent.collider.height);
+            if (ent.collider.restitution !== undefined) TDE.physics.setRestitution(bodyId, ent.collider.restitution);
+            if (ent.collider.friction !== undefined) TDE.physics.setFriction(bodyId, ent.collider.friction);
+          }
+          entity.bodyId = bodyId;
+          entity.color = ent.color;
+          entity.data = ent.data || {};
+        }
+        if (state.playerPos) {
+          TDE.physics.setPosition(STATE.player.bodyId, state.playerPos.x, state.playerPos.y, state.playerPos.z);
+        }
+        toast('toast.loaded');
+        TDS.audio.play('load');
+      } catch (err) {
+        console.error('[td-sandbox] import failed:', err);
+        toast('toast.reset');
+      }
+    };
+    reader.readAsText(file);
+    // Reset the input so the same file can be re-imported later.
+    event.target.value = '';
   }
 
   function toast(i18nKey) {

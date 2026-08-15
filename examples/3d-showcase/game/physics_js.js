@@ -471,6 +471,17 @@
   function contactCount() { return _world.contactCount; }
   function getBody(id) { return _world.bodies.get(id); }
   function allBodies() { return Array.from(_world.bodies.values()); }
+  // Marks a body for removal.  We actually delete it from the Map (the JS
+  // fallback doesn't need index stability the way the C++ engine does —
+  // bodyIds are arbitrary numbers, not array indices).  Any future calls
+  // with this bodyId are no-ops.
+  function removeBody(id) {
+    const b = _world.bodies.get(id);
+    if (!b) return;
+    // Also remove any constraints that reference this body.
+    _world.constraints = _world.constraints.filter(c => c.bodyA !== id && c.bodyB !== id);
+    _world.bodies.delete(id);
+  }
 
   function setSphereCollider(id, radius) {
     const b = _world.bodies.get(id);
@@ -631,7 +642,7 @@
   // The game's main module installs it as TDEngine.physics when WASM is absent.
   const Physics = {
     init, shutdown, step,
-    addBody, bodyCount, contactCount, getBody, allBodies,
+    addBody, bodyCount, contactCount, getBody, allBodies, removeBody,
     setSphereCollider, setBoxCollider, setCapsuleCollider, setStaticPlaneCollider,
     setPosition, setVelocity, getPosition, getVelocity, getOrientation,
     applyForce, applyImpulse, applyTorque,

@@ -1100,6 +1100,16 @@ int td_physics_add_body(float mass, float px, float py, float pz,
 }
 
 EMSCRIPTEN_KEEPALIVE
+void td_physics_remove_body(int bodyId)
+{
+    if (!td::g_physicsWorld3D) return;
+    // Marks the body as static + colliderless.  The broadphase skips it,
+    // the solver skips it, and the renderer stops drawing it.  Index is
+    // preserved so other bodyIds remain valid.
+    td::g_physicsWorld3D->removeBody(bodyId);
+}
+
+EMSCRIPTEN_KEEPALIVE
 void td_physics_set_sphere_collider(int bodyId, float radius,
                                      float offX, float offY, float offZ)
 {

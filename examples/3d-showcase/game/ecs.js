@@ -46,11 +46,13 @@
   function destroy(id) {
     const e = _entities.get(id);
     if (!e) return;
-    if (e.bodyId && global.TDEngine && global.TDEngine.physics) {
-      // The engine's physics world owns the body — we don't have a
-      // "destroy body" call in the C++ bridge yet, so just mark it dead
-      // and let it fall off the visible scene.  The JS fallback's
-      // _world.bodies Map will be cleaned by the game loop.
+    // Remove the physics body too.  Without this, every "destroy" call
+    // leaks a body in the physics world — invisible, still simulated,
+    // still consuming broadphase + solver time.  After a few minutes of
+    // spawning + resetting, bodyCount balloons and FPS collapses.
+    // (This was bug "physics body leak on destroy" — fixed 2026-08-16.)
+    if (e.bodyId && global.TDEngine && global.TDEngine.physics && global.TDEngine.physics.removeBody) {
+      global.TDEngine.physics.removeBody(e.bodyId);
     }
     e.dead = true;
     _entities.delete(id);

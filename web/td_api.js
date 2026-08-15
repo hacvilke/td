@@ -89,6 +89,13 @@
   const lifecycle = {
     async init(canvasId) {
       if (_initialized) return;
+      // Defensive: if the WASM glue script didn't load (e.g. 404 on the
+      // CDN, or the showcase page forgot to include it), bail out with a
+      // clear error instead of crashing on `undefined.init()`.  The
+      // caller (game.js boot) catches this and falls back to JS physics.
+      if (!global.TDBridge || typeof global.TDBridge.init !== 'function') {
+        throw new Error('TDBridge not loaded — WASM glue script missing or failed.');
+      }
       await global.TDBridge.init(canvasId);
       _initialized = true;
       _ready = true;
@@ -309,6 +316,14 @@
     },
     bodyCount() {
       return wrap('td_physics_body_count', 'number', []).call(null);
+    },
+    // Marks a body as static + colliderless.  The broadphase skips it,
+    // the solver skips it, the renderer stops drawing it.  Index is
+    // preserved so other bodyIds remain valid.  Use this when an entity
+    // is destroyed — leaving the body in the world causes invisible
+    // collisions and a slow FPS death over time.
+    removeBody(bodyId) {
+      wrap('td_physics_remove_body', null, ['number']).call(null, bodyId);
     },
 
     // ---- Colliders -------------------------------------------------------
