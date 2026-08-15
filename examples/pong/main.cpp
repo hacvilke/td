@@ -10,6 +10,7 @@
 #include "../../src/renderer/camera.h"
 #include "../../src/ecs/world.h"
 #include <cstdio>
+#include <cstdlib>   // rand() — MSVC's <cstdio> does NOT transitively include <cstdlib> (glibc does)
 
 using namespace td;
 

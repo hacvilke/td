@@ -16,6 +16,7 @@
 // =============================================================================
 #include "transport_impl.h"
 
+#include <cerrno>     // errno on POSIX (WSAGetLastError is used on Win32 instead)
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -204,7 +205,11 @@ bool Socket::open(uint16_t localPort) {
 
     m_sock = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (m_sock == TD_INVALID_SOCKET) {
+#if defined(TD_NET_WIN32)
+        TD_LOG_ERROR("socket() failed: WSA error=%d", WSAGetLastError());
+#else
         TD_LOG_ERROR("socket() failed: errno=%d", errno);
+#endif
         return false;
     }
 
@@ -217,7 +222,11 @@ bool Socket::open(uint16_t localPort) {
 
     if (::bind(m_sock, reinterpret_cast<sockaddr*>(&bindAddr),
                sizeof(bindAddr)) == TD_SOCKET_ERROR) {
+#if defined(TD_NET_WIN32)
+        TD_LOG_ERROR("bind(port=%u) failed: WSA error=%d", localPort, WSAGetLastError());
+#else
         TD_LOG_ERROR("bind(port=%u) failed: errno=%d", localPort, errno);
+#endif
         closesocket(m_sock);
         m_sock = TD_INVALID_SOCKET;
         return false;

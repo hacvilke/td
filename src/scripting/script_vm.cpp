@@ -45,6 +45,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>   // std::rand, std::srand, RAND_MAX — MSVC's <fstream> pulls this in transitively but it's not guaranteed
 #include <cstring>
 #include <ctime>
 #include <deque>
