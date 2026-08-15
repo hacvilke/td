@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="TD Engine — an open-source C++ game engine that compiles to WebAssembly. The same code runs on Windows desktop and in any modern browser. ECS, networking, voxel, UI toolkit, scripting VM, audio.">
+    <meta name="description" content="TD Engine — an open-source multi-language game engine (C / C++ core, JS / TS bridge) that compiles to WebAssembly. Same code runs on Windows desktop and in any modern browser. ECS, networking, voxel, UI toolkit, scripting VM, audio.">
+    <link rel="stylesheet" href="style.css?v=24">
     <meta name="theme-color" content="#0a0e14">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>TD Engine — C++ game engine for the web</title>
-    <link rel="stylesheet" href="style.css?v=23">
+    <title>TD Engine — multi-language game engine for the web</title>
     <style>
-        /* ---- Landing page styles (scoped, no conflict with play.html) ---- */
+        /* ---- Landing page styles (scoped) ---- */
         html, body {
             margin: 0; padding: 0;
             background: #0a0e14;
@@ -236,70 +236,46 @@
             line-height: 1.7;
         }
 
-        /* Demo gallery */
-        .td-demos {
+        /* Direction / stack diagram */
+        .td-stack {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 14px;
+            margin-top: 18px;
         }
-        .td-demos .demo {
-            display: block;
-            background: #11161e;
+        .td-stack .layer {
+            background: linear-gradient(180deg, #11161e 0%, #0d1118 100%);
             border: 1px solid #1f2937;
             border-radius: 10px;
             padding: 18px;
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.2s ease;
             position: relative;
-            overflow: hidden;
         }
-        .td-demos .demo::before {
-            content: '';
-            position: absolute; top: 0; left: 0; right: 0; height: 3px;
-            background: var(--accent, #67e8f9);
-            opacity: 0; transition: opacity 0.2s;
-        }
-        .td-demos .demo:hover {
-            border-color: var(--accent, #67e8f9);
-            transform: translateY(-2px);
-            box-shadow: 0 12px 32px rgba(0,0,0,0.4);
-        }
-        .td-demos .demo:hover::before { opacity: 1; }
-        .td-demos .demo .badge {
-            display: inline-block;
+        .td-stack .layer .lang {
             font-family: ui-monospace, Menlo, monospace;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 700;
-            letter-spacing: 1px;
-            color: var(--accent, #67e8f9);
-            background: rgba(103, 232, 249, 0.08);
-            border: 1px solid rgba(103, 232, 249, 0.25);
-            padding: 2px 8px;
-            border-radius: 4px;
-            margin-bottom: 10px;
+            letter-spacing: 1.5px;
+            color: #67e8f9;
+            text-transform: uppercase;
         }
-        .td-demos .demo h3 {
-            margin: 0 0 6px;
-            font-family: ui-monospace, Menlo, monospace;
+        .td-stack .layer h4 {
+            margin: 6px 0 8px;
             font-size: 15px;
             color: #e2e8f0;
-            font-weight: 700;
-            letter-spacing: 0.5px;
+            font-weight: 600;
         }
-        .td-demos .demo p {
+        .td-stack .layer p {
             margin: 0;
-            color: #94a3b8;
             font-size: 12px;
-            line-height: 1.5;
+            color: #94a3b8;
+            line-height: 1.55;
         }
-        .td-demos .demo .arrow {
-            position: absolute; bottom: 14px; right: 14px;
-            color: var(--accent, #67e8f9);
-            font-size: 16px;
-            opacity: 0; transition: opacity 0.2s;
+        .td-stack .layer .files {
+            margin-top: 10px;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 11px;
+            color: #64748b;
         }
-        .td-demos .demo:hover .arrow { opacity: 1; }
 
         /* Code preview block */
         .td-code {
@@ -376,10 +352,10 @@
     </a>
     <div class="links">
         <a href="docs.html">Docs</a>
-        <a href="play.html">Play</a>
         <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
+        <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener">CI</a>
         <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">GitHub</a>
-        <a href="play.html" class="cta-primary">Play Demos &rarr;</a>
+        <a href="docs.html" class="cta-primary">Read the Docs &rarr;</a>
     </div>
 </nav>
 
@@ -397,20 +373,20 @@
     </div>
     <h1>TD Engine</h1>
     <p class="tagline">
-        An open-source <b>C++ game engine</b> that compiles to <b>WebAssembly</b>.
-        The same code runs on Windows desktop and in any modern browser &mdash;
-        ECS, networking, voxel, UI toolkit, scripting VM, audio, all in one.
+        An open-source game engine built on a <b>C / C++ core</b> with a
+        <b>JavaScript / TypeScript bridge</b> for the web. The same code runs
+        on Windows desktop and in any modern browser &mdash; ECS, networking,
+        voxel, UI toolkit, scripting VM, audio, all in one.
     </p>
     <div class="ctas">
-        <a href="play.html" class="play">&#9658; Play Demos</a>
-        <a href="docs.html" class="docs">Read the Docs</a>
-        <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener" class="source">View Source</a>
+        <a href="docs.html" class="play">Read the Docs</a>
+        <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener" class="docs">View Source</a>
+        <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener" class="source">CI Status</a>
     </div>
     <div class="stats">
         <div class="stat"><div class="num">26K</div><div class="label">Lines of C++</div></div>
         <div class="stat"><div class="num">16</div><div class="label">Subsystems</div></div>
-        <div class="stat"><div class="num">655</div><div class="label">Tests passing</div></div>
-        <div class="stat"><div class="num">6</div><div class="label">Demo games</div></div>
+        <div class="stat"><div class="num">2</div><div class="label">CI pipelines</div></div>
         <div class="stat"><div class="num">0</div><div class="label">External deps</div></div>
     </div>
 </section>
@@ -519,48 +495,86 @@ ecs.<span class="fn">setCollider</span>(e, {<span class="num">32</span>, <span c
 </section>
 
 <!-- ====================================================================== -->
-<!-- Demo gallery                                                            -->
+<!-- Engine stack                                                            -->
 <!-- ====================================================================== -->
 <section class="td-section">
-    <h2>Play the demos</h2>
-    <p class="section-sub">// Six shipped games &mdash; each one showcases a different engine subsystem</p>
-    <div class="td-demos">
-        <a href="play.html?game=voidrunner" class="demo" style="--accent:#67e8f9">
-            <span class="badge">SHMUP</span>
-            <h3>VOID RUNNER</h3>
-            <p>Space shooter with drones, hunters, tanks, and powerups. Showcases the renderer + ECS + sprite batcher at 60 FPS.</p>
-            <span class="arrow">&rarr;</span>
-        </a>
-        <a href="play.html?game=pong" class="demo" style="--accent:#fcd34d">
-            <span class="badge">CLASSIC</span>
-            <h3>PONG</h3>
-            <p>Two-paddle Pong with a simple AI opponent. First to 7 points wins. Demonstrates basic input + collision + score UI.</p>
-            <span class="arrow">&rarr;</span>
-        </a>
-        <a href="play.html?game=beat" class="demo" style="--accent:#f87171">
-            <span class="badge">RHYTHM</span>
-            <h3>BEAT DEMO</h3>
-            <p>Notes fall on every beat at 100 BPM. Tap Space when they cross the hit line. Combo system. Showcases the beat system + audio mixer.</p>
-            <span class="arrow">&rarr;</span>
-        </a>
-        <a href="play.html?game=script" class="demo" style="--accent:#c084fc">
-            <span class="badge">SCRIPTING</span>
-            <h3>SCRIPT ARENA</h3>
-            <p>Particle playground driven by a tdscript source string compiled at boot. Cycles 5 locales (en/es/fr/zh/ar) with RTL flip.</p>
-            <span class="arrow">&rarr;</span>
-        </a>
-        <a href="play.html?game=net" class="demo" style="--accent:#4ade80">
-            <span class="badge">NET LAYER</span>
-            <h3>NET ARENA</h3>
-            <p>Single-player vs AI drones with an optional WebSocket echo ping for live RTT measurement. Showcases the modular TDEngine API + deprecated tracker.</p>
-            <span class="arrow">&rarr;</span>
-        </a>
-        <a href="play.html?game=net2" class="demo" style="--accent:#fb923c">
-            <span class="badge">MULTIPLAYER</span>
-            <h3>NET ARENA 2</h3>
-            <p>Real P2P multiplayer. Open this page in 2+ browser tabs and shoot each other. Player state broadcast at 20 Hz. Sub-millisecond RTT in the HUD.</p>
-            <span class="arrow">&rarr;</span>
-        </a>
+    <h2>The stack</h2>
+    <p class="section-sub">// Four languages, one engine. Each layer has a clear job.</p>
+    <div class="td-stack">
+        <div class="layer">
+            <div class="lang">C</div>
+            <h4>Portable core</h4>
+            <p>The lowest layer &mdash; math, allocator hooks, and the plugin ABI. Pure C89 so it can be called from anywhere with no C++ runtime.</p>
+            <div class="files">src/core/* &#183; src/plugin/plugin_abi.h</div>
+        </div>
+        <div class="layer">
+            <div class="lang">C++</div>
+            <h4>Engine subsystems</h4>
+            <p>16 subsystems (ECS, renderer, physics, audio, networking, voxel, UI, scripting VM). C++17, no STL bloat, compiles to both native and WASM.</p>
+            <div class="files">src/ecs &#183; src/renderer &#183; src/net &#183; src/voxel &#183; ...</div>
+        </div>
+        <div class="layer">
+            <div class="lang">JS</div>
+            <h4>Web bridge</h4>
+            <p>Thin Emscripten <code>cwrap</code> bindings + pure-JS modules for things browsers do best (WebSocket, BroadcastChannel, IndexedDB, Web Audio).</p>
+            <div class="files">wasm/js_bridge.js &#183; web/td_api.js &#183; web/net_websocket.js</div>
+        </div>
+        <div class="layer">
+            <div class="lang">TS</div>
+            <h4>Game code</h4>
+            <p>You write your game in TypeScript (or plain JS). The engine ships .d.ts typings so your editor knows every API. No editor app &mdash; just VSCode.</p>
+            <div class="files">your-game/ &#183; tde.d.ts (planned)</div>
+        </div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Workflow                                                                -->
+<!-- ====================================================================== -->
+<section class="td-section">
+    <h2>The workflow</h2>
+    <p class="section-sub">// Your game lives in your folder. The engine lives in node_modules / a submodule. Nothing else.</p>
+    <div class="td-code-grid">
+        <div class="col">
+            <h3>// NO BUNDLED EDITOR</h3>
+            <p>
+                TD Engine is not an editor application. There is no <code>td-editor.exe</code> in the
+                default build. You write your game in <b>VSCode</b> (or any editor you like), in
+                a folder you own. The engine is a dependency you pull in.
+            </p>
+            <p>
+                This keeps your game code decoupled from the engine, lets you use any
+                build tool you want (Vite, esbuild, plain <code>tsc</code>), and means the
+                engine never has to ship a UI app that competes with the tools you
+                already know.
+            </p>
+            <p>
+                For shipping outside the browser, the planned <b>EXE bundler</b>
+                (roadmap) will wrap your JS game + the engine WASM into a single
+                Windows <code>.exe</code> so you can sell it on Steam / itch.io.
+            </p>
+        </div>
+        <div class="col">
+            <h3>// YOUR PROJECT LAYOUT</h3>
+            <div class="td-code">
+<span class="com">my-game/</span>
+<span class="com">&#9500;&#9472;&#9472; package.json</span>
+<span class="com">&#9500;&#9472;&#9472; tsconfig.json</span>
+<span class="com">&#9500;&#9472;&#9472; src/</span>
+<span class="com">&#9474;&#160;&#160;&#9500;&#9472;&#9472; player.ts</span>
+<span class="com">&#9474;&#160;&#160;&#9492;&#9472;&#9472; main.ts</span>
+<span class="com">&#9500;&#9472;&#9472; assets/</span>
+<span class="com">&#9474;&#160;&#160;&#9492;&#9472;&#9472; ship.png</span>
+<span class="com">&#9492;&#9472;&#9472; node_modules/</span>
+<span class="com">&#160;&#160;&#160;&#160;&#9492;&#9472;&#9472; td-engine/</span>
+<span class="com">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#9500;&#9472;&#9472; td-engine.wasm</span>
+<span class="com">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#9500;&#9472;&#9472; js_bridge.js</span>
+<span class="com">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#9492;&#9472;&#9472; tde.d.ts</span>
+
+<span class="com"># Dev: open in VSCode, run `vite`,</span>
+<span class="com"># iterate. Ship: bundle to EXE (planned).</span>
+            </div>
+        </div>
     </div>
 </section>
 
@@ -624,26 +638,14 @@ https://your.site/td/?server=
         &middot;
         <a href="https://github.com/hacvilke/td/releases" target="_blank" rel="noopener">Releases</a>
         &middot;
-        <a href="docs.html">Docs</a>
+        <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener">CI</a>
         &middot;
-        <a href="play.html">Play</a>
+        <a href="docs.html">Docs</a>
     </p>
     <p style="margin-top:8px;color:#475569">
-        Same C++ runs on Windows desktop and in your browser. No external dependencies. Ever.
+        C / C++ core. JS / TS bridge. Same code on Windows desktop and in your browser. No external dependencies. Ever.
     </p>
 </footer>
-
-<script>
-    // Backward compat: if someone has an old bookmark to /?game=foo, redirect
-    // them to play.html?game=foo so they don't land on the landing page.
-    (function () {
-        const params = new URLSearchParams(window.location.search);
-        const g = params.get('game');
-        if (g) {
-            window.location.replace('play.html?game=' + encodeURIComponent(g));
-        }
-    })();
-</script>
 
 </body>
 </html>

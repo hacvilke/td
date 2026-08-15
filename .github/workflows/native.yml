@@ -83,17 +83,17 @@ jobs:
           Ref:       ${{ github.ref }}
 
           Contents:
-            bin/        Compiled .exe (pong, platformer, td-editor, tests) and .lib
+            bin/        Compiled .exe (pong, platformer, tests) and .lib
             assets/     Shaders (sprite.vert, sprite.frag, basic_3d.vert/frag)
             src/        Engine source headers (.h) and .cpp
             examples/   Example game sources (pong, platformer)
-            editor/     Native editor sources
+            editor/     Native editor sources (build with -DTD_BUILD_EDITOR=ON)
             tests/      Unit test sources
 
           Usage:
             bin\pong.exe
             bin\platformer.exe
-            bin\td-editor.exe
+            bin\test_math.exe   (and other test_*.exe)
           "@ | Out-File -FilePath "$stage/USAGE.txt" -Encoding utf8
 
           Compress-Archive -Path "$stage" -DestinationPath "td-engine-windows-x64.zip" -Force
@@ -146,8 +146,9 @@ jobs:
             5. Double-click any of:
                - `pong.exe` — classic Pong
                - `platformer.exe` — side-scrolling platformer demo
-               - `td-editor.exe` — native C++ editor
                - `test_math.exe`, `test_ecs.exe`, `test_physics.exe` — unit tests
+
+            (The desktop editor is not built by default. If you need `td-editor.exe`, build from source with `-DTD_BUILD_EDITOR=ON`.)
 
             If Windows SmartScreen warns you, click **More info → Run anyway** (the binary isn't code-signed because this is a free open-source project).
 
@@ -158,7 +159,6 @@ jobs:
             ├── bin/        ← the .exe programs live here
             │   ├── pong.exe
             │   ├── platformer.exe
-            │   ├── td-editor.exe
             │   └── test_*.exe
             ├── assets/     ← shaders used by the demos
             ├── src/        ← engine source (you can ignore this if you just want to play)

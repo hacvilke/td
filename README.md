@@ -1,12 +1,12 @@
 # TD Engine
 
-A complete 2D/3D game engine written from scratch in C/C++ with **zero external libraries**. The same C++ source runs on Windows desktop (Win32 + OpenGL 3.3) and in any modern browser (WebAssembly + WebGL 2). Web game developers write JavaScript or TypeScript that calls into the C++ engine via a thin WASM bridge.
+A multi-language 2D/3D game engine built on a **C / C++ core** with a **JavaScript / TypeScript bridge** for the web, with **zero external libraries**. The same C++ source runs on Windows desktop (Win32 + OpenGL 3.3) and in any modern browser (WebAssembly + WebGL 2). Web game developers write JavaScript or TypeScript that calls into the C++ engine via a thin WASM bridge.
 
 ## Status
 
 | Platform | Status | Stack | Path |
 |----------|--------|-------|------|
-| **Desktop (Windows)** | ✅ Complete | C++17, Win32, OpenGL 3.3 | `src/`, `editor/`, `examples/` |
+| **Desktop (Windows)** | ✅ Complete | C / C++17, Win32, OpenGL 3.3 | `src/`, `examples/` |
 | **Browser (WASM)** | ✅ Complete | C++ → Emscripten → WebAssembly 2 + WebGL 2 | `wasm/`, `web/` |
 
 The C++ engine source is **shared** between both targets. Only the platform layer is swapped: `src/platform/win32_*.cpp` on desktop, `wasm/emscripten_main.cpp` in the browser.
@@ -31,16 +31,16 @@ python3 -m http.server 8000
 # open http://localhost:8000 in a browser
 ```
 
-Or just play it online: **https://hacvilke.github.io/td/** (landing page) — or jump straight to the **[web player](https://hacvilke.github.io/td/play.html)** or the **[documentation](https://hacvilke.github.io/td/docs.html)**.
+Or visit the live site: **https://hacvilke.github.io/td/** (homepage) — or jump straight to the **[documentation](https://hacvilke.github.io/td/docs.html)**.
 
-The landing page (`web/index.html`) showcases the engine and links to the web player (`web/play.html`), which loads `td-engine.wasm` and runs **VOID RUNNER**, a complete vertical space shooter written in pure JavaScript (`web/examples/voidrunner.js`) that drives the C++ engine via `TDBridge`.
+The homepage (`web/index.html`) describes the engine's architecture, the four-language stack (C / C++ / JS / TS), and the workflow (you write your game in VSCode, the engine is a dependency). The docs (`web/docs.html`) cover the full JavaScript API reference and guides.
 
 ## Download prebuilt Windows binaries
 
 Don't want to build from source? Grab the latest Windows x64 build from the
 [Releases page](https://github.com/hacvilke/td/releases):
 
-- **[TD Engine (Latest Build)](https://github.com/hacvilke/td/releases/tag/latest)** — rolling pre-release, rebuilt on every push to `main`. Contains `pong.exe`, `platformer.exe`, `td-editor.exe`, the test suite, sources, and assets in a single zip.
+- **[TD Engine (Latest Build)](https://github.com/hacvilke/td/releases/tag/latest)** — rolling pre-release, rebuilt on every push to `main`. Contains `pong.exe`, `platformer.exe`, the test suite, sources, and assets in a single zip. (Editor is OFF by default — enable with `-DTD_BUILD_EDITOR=ON` if you want `td-editor.exe`.)
 - **[Tagged releases](https://github.com/hacvilke/td/releases)** — stable versions, cut by pushing a `v*.*.*` tag (e.g. `v1.0.0`).
 
 ## Writing a web game in JavaScript
@@ -221,7 +221,7 @@ function loop() {
 requestAnimationFrame(loop);
 ```
 
-See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, working game.
+See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for a complete guide to writing a web game against the engine, including boot sequence, ECS usage, input polling, networking, and persistence.
 
 ## Features
 
@@ -232,7 +232,7 @@ See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, w
 - **Audio**: WAV loading, software mixing, 3D positional audio with HRTF-lite + Schroeder reverb + Doppler pitch shift
 - **ECS**: Entity-Component-System architecture with bit-mask queries, **plus** DOTS-style archetype ECS upgrade (contiguous component arrays per archetype, 10-100x cache friendlier)
 - **Asset Loading**: PNG decoder, OBJ loader, WAV loader, **plus** Addressables-style async asset catalog with ref counting + LRU eviction
-- **Visual Editor**: Scene panel, inspector, asset browser, console (desktop)
+- **Visual Editor**: Optional desktop editor (`editor/`, OFF by default — enable with `-DTD_BUILD_EDITOR=ON`). The recommended workflow is to write your game in VSCode and use the engine as a dependency.
 - **WebAssembly**: Browser support via Emscripten with zero external libraries
 - **Rhythm System**: BPM-synced beat tracker, on-beat detection, combo tracking
 
@@ -349,16 +349,19 @@ td-engine/
 │   ├── js_bridge.js         # Loads td-engine.wasm, sets up canvas + input + audio
 │   └── README.md            # Build + run instructions
 └── web/                # Browser-facing files
-    ├── index.html           # Landing page (hero, features, demo gallery)
-    ├── play.html            # Web player (game picker + 6 demos + release ticker)
+    ├── index.html           # Homepage (hero, stack diagram, workflow, self-host guide)
     ├── docs.html            # Documentation (API reference + guides)
     ├── style.css            # Dark theme + #00D4FF accent
     ├── GETTING_STARTED.md   # 11-section guide for web game developers
-    └── examples/
-        ├── voidrunner.js    # VOID RUNNER — vertical space shooter
-        ├── pong.js          # Pong — classic 2-player paddle game
-        ├── beat_demo.js     # BEAT DEMO — rhythm game using the BeatTracker
-        └── script_arena.js  # SCRIPT ARENA — tdscript VM + i18n showcase
+    ├── td_api.js            # TDEngine.* namespace (lifecycle, ecs, input, beat, ...)
+    ├── net_websocket.js     # TDNet.Socket + RPC + ServerConfig
+    ├── net_peer.js          # TDNet.Peer (BroadcastChannel P2P)
+    ├── server_router.js     # ?server= URL rewriting for self-hosting
+    ├── inspector.js         # Live ECS entity browser (mount in your dev UI)
+    ├── profiler.js          # Frame-time graph + counters + heap meter
+    ├── persistence.js       # Save/load with game-registered serializers
+    ├── error_boundary.js    # Friendly crash card with stack trace
+    └── deprecated_tracker.js  # Godot-like deprecated API warnings
 ```
 
 ## Building
@@ -370,7 +373,7 @@ td-engine/
 ```bash
 # MinGW (make)
 make                 # build engine lib + pong + platformer
-make editor          # build the visual editor
+make editor          # (optional) build the visual editor — off by default
 make clean
 
 # CMake
@@ -448,7 +451,7 @@ int main() {
 
 ## Quick Start (Browser JavaScript)
 
-See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, working game. The workflow is:
+The recommended workflow is to write your game in VSCode (in a folder you own), pull the engine in as a dependency, and boot it on a canvas. The workflow is:
 
 1. Include `td-engine.js` (Emscripten glue) + `wasm/js_bridge.js` (TDBridge) in your HTML.
 2. Call `await TDBridge.init('game-canvas')` to boot the engine.
@@ -456,7 +459,7 @@ See [`web/examples/voidrunner.js`](web/examples/voidrunner.js) for a complete, w
 4. Run a `requestAnimationFrame` loop that reads input, updates game state in JS, and pushes changes to the engine via the cwrap'd functions.
 5. The engine's WASM main loop (driven by `emscripten_set_main_loop`) renders every frame.
 
-For TypeScript, use the same `TDBridge` global — it's declared via JSDoc and works in both plain JS and TS files. See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for the full API reference.
+For TypeScript, use the same `TDBridge` global — it's declared via JSDoc and works in both plain JS and TS files. See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for the full API reference. The planned **EXE bundler** (roadmap) will wrap your finished JS game into a single Windows `.exe` for Steam / itch.io distribution.
 
 ## What does NOT change between desktop and web
 

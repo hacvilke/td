@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>TD Engine — Documentation</title>
-    <link rel="stylesheet" href="style.css?v=23">
+    <link rel="stylesheet" href="style.css?v=24">
     <style>
         html, body {
             margin: 0; padding: 0;
@@ -309,10 +309,10 @@
     </a>
     <div class="links">
         <a href="index.html">Home</a>
-        <a href="play.html">Play</a>
         <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
+        <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener">CI</a>
         <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">GitHub</a>
-        <a href="play.html" class="cta-primary">Play Demos &rarr;</a>
+        <a href="index.html" class="cta-primary">Home &rarr;</a>
     </div>
 </nav>
 
@@ -364,16 +364,17 @@
 
 <h1>TD Engine Documentation</h1>
 <p style="font-size:15px;color:#94a3b8;max-width:680px">
-    TD Engine is a portable C++17 game engine that compiles to WebAssembly.
-    The same source runs on Windows desktop and in any modern browser. This
-    page covers the JavaScript API (the layer you write game code against
-    when targeting the web), plus self-hosting and multiplayer guides.
+    TD Engine is a multi-language game engine: a <b>C / C++17</b> core that compiles to
+    WebAssembly, with a <b>JavaScript / TypeScript</b> bridge for the web. The same
+    source runs on Windows desktop and in any modern browser. This page covers the
+    JavaScript API (the layer you write game code against when targeting the web),
+    plus self-hosting and multiplayer guides.
 </p>
 
 <!-- ============ Get Started ============ -->
 <h2 id="what-is-td">What is TD Engine?</h2>
 <p>
-    TD Engine is built on a simple bet: <b>write portable C++ once, compile it to WebAssembly, ship a single ~1&nbsp;MB <code>.wasm</code> file</b>.
+    TD Engine is built on a simple bet: <b>write portable C / C++ once, compile it to WebAssembly, ship a single ~1&nbsp;MB <code>.wasm</code> file</b>.
     The browser provides the platform layer (canvas, audio device, input events, WebSocket).
     The engine provides everything else &mdash; ECS, renderer, physics, audio, networking, scripting, UI toolkit, voxel world, i18n.
 </p>
@@ -383,20 +384,38 @@
     it's the same code, two platform backends.
 </p>
 <p>
+    The stack is four languages, each with a clear job:
+</p>
+<ul>
+    <li><b>C</b> &mdash; the lowest layer: math, allocator hooks, the plugin ABI. Pure C89, callable from anywhere.</li>
+    <li><b>C++17</b> &mdash; the engine subsystems (ECS, renderer, physics, audio, net, voxel, UI, scripting VM). 26K LOC, no STL bloat.</li>
+    <li><b>JavaScript</b> &mdash; the web bridge. Thin Emscripten <code>cwrap</code> bindings + pure-JS modules for things browsers do best (WebSocket, BroadcastChannel, IndexedDB, Web Audio).</li>
+    <li><b>TypeScript</b> &mdash; what you write your game in. The engine ships <code>.d.ts</code> typings (planned) so your editor knows every API. No editor app &mdash; just VSCode.</li>
+</ul>
+<p>
     The JavaScript layer (what you write game code against) is a thin wrapper around the C API exposed by the WASM module.
     It uses Emscripten's <code>ccall</code> / <code>cwrap</code> to call into C++ functions like
     <code>_td_create_entity</code>, <code>_td_entity_set_position</code>, etc.
     The wrapper lives in <code>web/td_api.js</code> and exposes the <code>TDEngine.*</code> namespace.
 </p>
+<div class="td-callout info">
+    <b>No bundled editor.</b> &nbsp;
+    TD Engine is not an editor application &mdash; there is no <code>td-editor.exe</code> in the
+    default build. You write your game in <b>VSCode</b> (or any editor you like) in a folder
+    you own. The engine is a dependency you pull in. This keeps your game code decoupled
+    from the engine and lets you use any build tool (Vite, esbuild, plain <code>tsc</code>).
+    For shipping outside the browser, the planned <b>EXE bundler</b> (roadmap) wraps your
+    JS game + the engine WASM into a single Windows <code>.exe</code> for Steam / itch.io.
+</div>
 
 <h2 id="quickstart">Quickstart (web)</h2>
 <p>
-    The fastest way to see the engine running is to open <a href="play.html">the web player</a> and pick a demo.
-    If you want to write your own game, here's the minimal pattern:
+    The fastest way to get started is to clone the repo, drop the <code>web/</code> folder into your project,
+    and boot the engine on a canvas. Here's the minimal pattern:
 </p>
 <pre><span class="com">// 1. Load the engine scripts in your HTML &lt;head&gt;</span>
-&lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"js_bridge.js?v=23"</span>&gt;&lt;/<span class="kw">script</span>&gt;
-&lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"td_api.js?v=23"</span>&gt;&lt;/<span class="kw">script</span>&gt;
+&lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"js_bridge.js?v=24"</span>&gt;&lt;/<span class="kw">script</span>&gt;
+&lt;<span class="kw">script</span> <span class="prop">src</span>=<span class="str">"td_api.js?v=24"</span>&gt;&lt;/<span class="kw">script</span>&gt;
 
 <span class="com">// 2. Boot the engine on a canvas</span>
 <span class="kw">await</span> <span class="fn">TDBridge</span>.<span class="fn">init</span>(<span class="str">'game-canvas'</span>);
@@ -435,25 +454,36 @@ $ git clone https://github.com/hacvilke/td
 $ cd td
 $ cmake -B build -S .
 
-<span class="com"># Build everything (engine + editor + examples + tests)</span>
+<span class="com"># Build everything (engine + examples + tests, editor OFF by default)</span>
 $ cmake --build build --parallel
 
-<span class="com"># Run a demo</span>
+<span class="com"># Run an example</span>
 $ ./build/bin/pong.exe
 $ ./build/bin/platformer.exe
-$ ./build/bin/td-editor.exe
 
 <span class="com"># Run unit tests</span>
-$ cd build &amp;&amp; ctest --output-on-failure</pre>
+$ cd build &amp;&amp; ctest --output-on-failure
+
+<span class="com"># (Optional) build the editor explicitly if you want it</span>
+$ cmake -B build -S . -DTD_BUILD_EDITOR=ON &amp;&amp; cmake --build build</pre>
+<div class="td-callout info">
+    <b>Why no editor by default?</b> &nbsp;
+    The engine's direction is &quot;you write your game in VSCode, the engine is a dependency.&quot;
+    Shipping an editor EXE competes with tools you already know and adds build weight.
+    The editor source is still in <code>editor/</code> for anyone who wants it &mdash; just flip
+    <code>-DTD_BUILD_EDITOR=ON</code>. The planned <b>EXE bundler</b> (roadmap) is a separate
+    tool that wraps your finished JS game into a sellable Windows <code>.exe</code>.
+</div>
 
 <h2 id="architecture">Architecture</h2>
 <p>
-    The engine has three layers, each one fully open-source:
+    The engine has four language layers, each one fully open-source:
 </p>
 <ol>
-    <li><b>C++ core</b> (<code>src/</code>) &mdash; 26K LOC across 16 subsystems. Pure C++17, no external dependencies. This is where the real work happens.</li>
+    <li><b>C core</b> (<code>src/core/</code>, <code>src/plugin/plugin_abi.h</code>) &mdash; math, allocator hooks, the plugin ABI. Pure C89, callable from anywhere with no C++ runtime.</li>
+    <li><b>C++17 subsystems</b> (<code>src/</code>) &mdash; 26K LOC across 16 subsystems. No external dependencies. This is where the real work happens.</li>
     <li><b>WASM platform</b> (<code>wasm/emscripten_main.cpp</code>) &mdash; exposes the C++ API as <code>extern "C"</code> functions that Emscripten exports to JavaScript.</li>
-    <li><b>JS bridge + modular API</b> (<code>web/js_bridge.js</code> + <code>web/td_api.js</code>) &mdash; wraps the C API in a clean, Godot-like namespace.</li>
+    <li><b>JS bridge + modular API</b> (<code>web/js_bridge.js</code> + <code>web/td_api.js</code>) &mdash; wraps the C API in a clean, Godot-like namespace. You write your game in TypeScript on top of this.</li>
 </ol>
 <p>
     The web runtime is split into focused modules, each loaded as a separate <code>&lt;script&gt;</code> tag:
@@ -628,8 +658,9 @@ handle.<span class="fn">stop</span>();  <span class="com">// stop autosaving</sp
 
 <h2 id="api-inspector">Inspector</h2>
 <p>
-    Click &quot;Inspect&quot; in the top bar of the web player to open a live ECS browser. It auto-refreshes at 4&nbsp;Hz
-    and shows every active entity, its ID, and its position. Useful for debugging &quot;why isn't my sprite showing&quot;.
+    The inspector is a live ECS entity/component browser. It auto-refreshes at 4&nbsp;Hz and shows
+    every active entity, its ID, and its position. Useful for debugging &quot;why isn't my sprite showing&quot;.
+    Mount it in your own dev UI &mdash; there's no built-in editor top bar.
 </p>
 <pre><span class="com">// Programmatic API (for headless testing or custom UI)</span>
 <span class="kw">const</span> snap = <span class="fn">TDInspector</span>.<span class="fn">snapshot</span>();
@@ -641,7 +672,7 @@ handle.<span class="fn">unmount</span>();</pre>
 
 <h2 id="api-profiler">Profiler</h2>
 <p>
-    Click &quot;Profiler&quot; in the top bar to open a rolling frame-time graph. It draws 60 FPS and 30 FPS budget
+    The profiler is a rolling frame-time graph you mount in your own dev UI. It draws 60 FPS and 30 FPS budget
     lines, named counters, vertical markers (for events like &quot;scene load&quot;), and a WASM/JS heap meter.
 </p>
 <pre><span class="kw">const</span> handle = <span class="fn">TDProfiler</span>.<span class="fn">mount</span>(containerEl, { refreshMs: <span class="num">100</span> });
@@ -663,10 +694,10 @@ handle.<span class="fn">unmount</span>();</pre>
 <p>
     To load the engine from a different origin (e.g. your VPN), add <code>?server=&lt;URL&gt;</code> to the page URL:
 </p>
-<pre>https://your.site/td/play.html?server=https://vpn.example.com/td/</pre>
+<pre>https://your.site/td/?server=https://vpn.example.com/td/</pre>
 <p>
     The <code>server_router.js</code> module rewrites all asset URLs (<code>td-engine.wasm</code>, <code>js_bridge.js</code>,
-    <code>style.css</code>, anything under <code>examples/</code>) to point at the custom server. No recompile, no config file.
+    <code>style.css</code>, and any other engine asset) to point at the custom server. No recompile, no config file.
 </p>
 <div class="td-callout info">
     <b>Why this matters:</b> &nbsp; Some schools, offices, and countries block GitHub Pages. The server router
@@ -684,7 +715,8 @@ handle.<span class="fn">unmount</span>();</pre>
     via BroadcastChannel, so there's no server to run. Latency is sub-millisecond.
 </p>
 <p>
-    This is what the <a href="play.html?game=net2">NET ARENA 2 demo</a> uses. Open that page in two tabs and shoot each other.
+    This is the same transport the engine's networking tests use. Open a page that calls <code>TDNet.Peer.join('arena-1')</code>
+    in 2+ tabs and they'll discover each other.
 </p>
 <h3>Internet (WebSocket server)</h3>
 <p>

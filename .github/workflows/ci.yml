@@ -94,7 +94,17 @@ jobs:
             web/index.html
             web/style.css
             web/js_bridge.js
-            web/examples/
+            web/docs.html
+            web/GETTING_STARTED.md
+            web/td_api.js
+            web/net_websocket.js
+            web/net_peer.js
+            web/server_router.js
+            web/inspector.js
+            web/profiler.js
+            web/persistence.js
+            web/error_boundary.js
+            web/deprecated_tracker.js
           if-no-files-found: error
 
       # Upload a SINGLE Pages artifact — this is what actions/deploy-pages

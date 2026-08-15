@@ -128,8 +128,13 @@ struct CameraComponent {
     
     Type type = Type::Perspective;
     float fov = 60.0f;
-    float near = 0.1f;
-    float far = 1000.0f;
+    // NOTE: named nearPlane/farPlane (not near/far) because Windows/MSVC's
+    // <windef.h> still defines `near` and `far` as legacy macros from the
+    // Win16 era, which turns `float near = 0.1f;` into `float = 0.1f;` and
+    // breaks the native Windows CI build. GCC/Clang do not define these
+    // macros so Linux/macOS builds were unaffected.
+    float nearPlane = 0.1f;
+    float farPlane  = 1000.0f;
     float orthoSize = 5.0f;
     bool active = false;
     bool mainCamera = false;

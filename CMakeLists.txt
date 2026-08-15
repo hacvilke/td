@@ -13,7 +13,7 @@
 #      Output: web/td-engine.js + web/td-engine.wasm
 #
 # Common options:
-#   -DTD_BUILD_EDITOR=ON   Build the desktop editor (default ON)
+#   -DTD_BUILD_EDITOR=ON   Build the desktop editor (default OFF — see docs.html)
 #   -DTD_BUILD_EXAMPLES=ON Build pong + platformer (default ON)
 #   -DTD_BUILD_TESTS=ON    Build unit tests (default ON)
 # =============================================================================
@@ -23,7 +23,7 @@ project(TDEngine VERSION 1.0.0 LANGUAGES CXX)
 
 # --- Build options -----------------------------------------------------------
 option(TD_BUILD_WEB      "Build for WebAssembly (requires Emscripten)" OFF)
-option(TD_BUILD_EDITOR   "Build the desktop editor"                     ON)
+option(TD_BUILD_EDITOR   "Build the desktop editor"                     OFF)
 option(TD_BUILD_EXAMPLES "Build pong + platformer examples"             ON)
 option(TD_BUILD_TESTS    "Build unit tests"                              ON)
 

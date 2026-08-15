@@ -7,8 +7,9 @@
 // Usage in the URL:
 //   https://hacvilke.github.io/td/?server=https://my-vpn.example.com/td/
 //
-// All engine assets (td-engine.js, td-engine.wasm, js_bridge.js, examples/*.js)
-// will be loaded from the specified server URL instead of the local origin.
+// All engine assets (td-engine.js, td-engine.wasm, js_bridge.js, td_api.js,
+// net_websocket.js, etc.) will be loaded from the specified server URL instead
+// of the local origin.
 //
 // The chosen server URL is persisted to localStorage so the user only has to
 // set it once. A "Settings" gear button in the top bar opens a panel where
@@ -85,7 +86,7 @@
     } catch (e) {}
   }
 
-  // Resolve a relative asset path (e.g. 'td-engine.js' or 'examples/pong.js')
+  // Resolve a relative asset path (e.g. 'td-engine.js' or 'td_api.js')
   // against the chosen server URL. Returns the absolute URL to fetch.
   function resolveAsset(relativePath) {
     const base = getCurrentServerUrl();
@@ -167,9 +168,9 @@
         <p style="margin:0 0 12px;font-size:13px;line-height:1.5;color:#94a3b8">
           Host the TD Engine on your own server, VPN, or CDN. Enter the base URL
           where <code style="color:#67e8f9">td-engine.js</code>,
-          <code style="color:#67e8f9">td-engine.wasm</code>, and the
-          <code style="color:#67e8f9">examples/</code> folder live. The page will
-          load all engine assets from there instead of this site.
+          <code style="color:#67e8f9">td-engine.wasm</code>, and the engine JS
+          modules live. The page will load all engine assets from there instead
+          of this site.
         </p>
         <label style="display:block;font-size:12px;color:#94a3b8;margin-bottom:6px">Server base URL</label>
         <input id="td-settings-input" type="text" placeholder="https://my-server.example.com/td/"
