@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="TD Engine — an open-source multi-language game engine (C / C++ core, JS / TS bridge) that compiles to WebAssembly. Same code runs on Windows desktop and in any modern browser. ECS, networking, voxel, UI toolkit, scripting VM, audio.">
+    <link rel="stylesheet" href="style.css?v=24">
+    <meta name="theme-color" content="#0a0e14">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>TD Engine — multi-language game engine for the web</title>
+    <style>
+        /* ---- Landing page styles (scoped) ---- */
+        html, body {
+            margin: 0; padding: 0;
+            background: #0a0e14;
+            color: #cbd5e1;
+            font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        body { padding-top: 0; }
+
+        /* Top nav bar */
+        .td-nav {
+            position: sticky; top: 0; z-index: 50;
+            display: flex; align-items: center; gap: 16px;
+            padding: 12px 24px;
+            background: rgba(10, 14, 20, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid #1f2937;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        }
+        .td-nav .brand {
+            display: flex; align-items: center; gap: 8px;
+            font-weight: 700; color: #67e8f9;
+            letter-spacing: 0.5px;
+            font-size: 14px;
+        }
+        .td-nav .brand .mark {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px;
+            color: #67e8f9;
+            filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.5));
+        }
+        .td-nav .brand .mark svg { width: 100%; height: 100%; }
+        @keyframes td-boat-rock {
+            0%, 100% { transform: rotate(-3deg); }
+            50%      { transform: rotate(3deg); }
+        }
+        .td-nav .brand .mark svg { animation: td-boat-rock 4s ease-in-out infinite; transform-origin: 50% 75%; }
+        .td-nav .links {
+            margin-left: auto;
+            display: flex; gap: 18px; align-items: center;
+            font-size: 13px;
+        }
+        .td-nav .links a {
+            color: #94a3b8;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+        .td-nav .links a:hover { color: #67e8f9; }
+        .td-nav .links .cta-primary {
+            background: #67e8f9;
+            color: #0a0e14;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+        .td-nav .links .cta-primary:hover { background: #8af0ff; color: #0a0e14; }
+
+        /* Hero section */
+        .td-hero {
+            position: relative;
+            padding: 100px 24px 80px;
+            text-align: center;
+            overflow: hidden;
+        }
+        .td-hero::before {
+            content: '';
+            position: absolute; inset: 0;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(103, 232, 249, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(167, 139, 250, 0.08) 0%, transparent 40%);
+            pointer-events: none;
+        }
+        .td-hero .hero-logo {
+            width: 96px; height: 96px;
+            margin: 0 auto 24px;
+            color: #67e8f9;
+            filter: drop-shadow(0 0 24px rgba(103, 232, 249, 0.4));
+            animation: td-boat-rock 4s ease-in-out infinite;
+            transform-origin: 50% 75%;
+        }
+        .td-hero .hero-logo svg { width: 100%; height: 100%; }
+        .td-hero h1 {
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            font-size: clamp(36px, 6vw, 64px);
+            font-weight: 800;
+            margin: 0 0 16px;
+            background: linear-gradient(180deg, #e2e8f0 0%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+        .td-hero .tagline {
+            font-size: clamp(16px, 2.4vw, 22px);
+            color: #94a3b8;
+            max-width: 640px;
+            margin: 0 auto 32px;
+        }
+        .td-hero .tagline b { color: #67e8f9; font-weight: 600; }
+        .td-hero .ctas {
+            display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        .td-hero .ctas a {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 14px;
+            font-weight: 700;
+            text-decoration: none;
+            letter-spacing: 0.5px;
+            transition: all 0.15s ease;
+        }
+        .td-hero .ctas .play {
+            background: #67e8f9; color: #0a0e14;
+            box-shadow: 0 8px 24px rgba(103, 232, 249, 0.3);
+        }
+        .td-hero .ctas .play:hover { background: #8af0ff; transform: translateY(-2px); box-shadow: 0 12px 32px rgba(103, 232, 249, 0.4); }
+        .td-hero .ctas .docs {
+            background: transparent; color: #67e8f9;
+            border: 1px solid #334155;
+        }
+        .td-hero .ctas .docs:hover { border-color: #67e8f9; background: rgba(103, 232, 249, 0.06); }
+        .td-hero .ctas .source {
+            background: transparent; color: #94a3b8;
+            border: 1px solid #1f2937;
+        }
+        .td-hero .ctas .source:hover { color: #e2e8f0; border-color: #334155; }
+        .td-hero .stats {
+            display: flex; gap: 32px; justify-content: center; flex-wrap: wrap;
+            margin-top: 48px;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        }
+        .td-hero .stats .stat {
+            text-align: center;
+        }
+        .td-hero .stats .stat .num {
+            font-size: 28px;
+            font-weight: 800;
+            color: #67e8f9;
+            line-height: 1;
+        }
+        .td-hero .stats .stat .label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-top: 6px;
+        }
+
+        /* Section wrapper */
+        .td-section {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 60px 24px;
+        }
+        .td-section h2 {
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 28px;
+            font-weight: 700;
+            color: #e2e8f0;
+            margin: 0 0 8px;
+            letter-spacing: -0.01em;
+        }
+        .td-section .section-sub {
+            color: #64748b;
+            font-size: 14px;
+            margin: 0 0 36px;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        }
+
+        /* Feature grid */
+        .td-features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 18px;
+        }
+        .td-features .card {
+            background: linear-gradient(180deg, #11161e 0%, #0d1118 100%);
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 22px;
+            transition: all 0.2s ease;
+        }
+        .td-features .card:hover {
+            border-color: #334155;
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+        }
+        .td-features .card .icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 36px; height: 36px;
+            background: rgba(103, 232, 249, 0.08);
+            border: 1px solid rgba(103, 232, 249, 0.2);
+            border-radius: 8px;
+            color: #67e8f9;
+            font-size: 18px;
+            margin-bottom: 14px;
+            font-family: ui-monospace, Menlo, monospace;
+            font-weight: 700;
+        }
+        .td-features .card h3 {
+            margin: 0 0 8px;
+            font-size: 16px;
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+        .td-features .card p {
+            margin: 0;
+            color: #94a3b8;
+            font-size: 13px;
+            line-height: 1.55;
+        }
+        .td-features .card ul {
+            margin: 8px 0 0;
+            padding-left: 18px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        /* Direction / stack diagram */
+        .td-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 14px;
+            margin-top: 18px;
+        }
+        .td-stack .layer {
+            background: linear-gradient(180deg, #11161e 0%, #0d1118 100%);
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 18px;
+            position: relative;
+        }
+        .td-stack .layer .lang {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: #67e8f9;
+            text-transform: uppercase;
+        }
+        .td-stack .layer h4 {
+            margin: 6px 0 8px;
+            font-size: 15px;
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+        .td-stack .layer p {
+            margin: 0;
+            font-size: 12px;
+            color: #94a3b8;
+            line-height: 1.55;
+        }
+        .td-stack .layer .files {
+            margin-top: 10px;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        /* Code preview block */
+        .td-code {
+            background: #0d1118;
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 24px;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            color: #cbd5e1;
+            overflow-x: auto;
+        }
+        .td-code .kw { color: #c084fc; }
+        .td-code .fn { color: #67e8f9; }
+        .td-code .str { color: #fcd34d; }
+        .td-code .num { color: #f87171; }
+        .td-code .com { color: #475569; font-style: italic; }
+        .td-code .prop { color: #93c5fd; }
+
+        /* Footer */
+        .td-footer {
+            border-top: 1px solid #1f2937;
+            padding: 32px 24px;
+            text-align: center;
+            color: #64748b;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 12px;
+        }
+        .td-footer a { color: #67e8f9; text-decoration: none; }
+        .td-footer a:hover { text-decoration: underline; }
+
+        /* Code section layout */
+        .td-code-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+        @media (max-width: 800px) {
+            .td-code-grid { grid-template-columns: 1fr; }
+        }
+        .td-code-grid .col h3 {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 14px;
+            color: #67e8f9;
+            margin: 0 0 12px;
+            letter-spacing: 0.5px;
+        }
+        .td-code-grid .col p {
+            color: #94a3b8;
+            font-size: 13px;
+            margin: 0 0 16px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ====================================================================== -->
+<!-- Top nav                                                                 -->
+<!-- ====================================================================== -->
+<nav class="td-nav">
+    <a href="index.html" class="brand">
+        <span class="mark" aria-label="TD Engine logo">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+                <rect x="17" y="4"  width="30" height="6" rx="1.5" fill="currentColor"/>
+                <rect x="29" y="4"  width="6"  height="30" rx="1.5" fill="currentColor"/>
+                <path d="M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z" fill="currentColor"/>
+                <path d="M 4 54 Q 16 51, 32 54 T 60 54" stroke="currentColor" stroke-width="2.5" fill="none" opacity="0.45"/>
+            </svg>
+        </span>
+        <span>TD ENGINE</span>
+    </a>
+    <div class="links">
+        <a href="docs.html">Docs</a>
+        <a href="examples/3d-showcase/index.html">3D Sandbox Demo</a>
+        <a href="https://github.com/hacvilke/td/blob/main/docs/MODULARITY_ROADMAP.md" target="_blank" rel="noopener">Roadmap</a>
+        <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener">CI</a>
+        <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">GitHub</a>
+        <a href="examples/3d-showcase/index.html" class="cta-primary">Play Demo &rarr;</a>
+    </div>
+</nav>
+
+<!-- ====================================================================== -->
+<!-- Hero                                                                    -->
+<!-- ====================================================================== -->
+<section class="td-hero">
+    <div class="hero-logo">
+        <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+            <rect x="17" y="4"  width="30" height="6" rx="1.5" fill="currentColor"/>
+            <rect x="29" y="4"  width="6"  height="30" rx="1.5" fill="currentColor"/>
+            <path d="M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z" fill="currentColor"/>
+            <path d="M 4 54 Q 16 51, 32 54 T 60 54" stroke="currentColor" stroke-width="2.5" fill="none" opacity="0.45"/>
+        </svg>
+    </div>
+    <h1>TD Engine</h1>
+    <p class="tagline">
+        An open-source game engine built on a <b>C / C++ core</b> with a
+        <b>JavaScript / TypeScript bridge</b> for the web. The same code runs
+        on Windows desktop and in any modern browser &mdash; ECS, networking,
+        voxel, UI toolkit, scripting VM, audio, all in one.
+    </p>
+    <div class="ctas">
+        <a href="examples/3d-showcase/index.html" class="play">Play 3D Demo</a>
+        <a href="docs.html" class="docs">Read the Docs</a>
+        <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener" class="source">View Source</a>
+    </div>
+    <div class="stats">
+        <div class="stat"><div class="num">26K</div><div class="label">Lines of C++</div></div>
+        <div class="stat"><div class="num">16</div><div class="label">Subsystems</div></div>
+        <div class="stat"><div class="num">2</div><div class="label">CI pipelines</div></div>
+        <div class="stat"><div class="num">0</div><div class="label">External deps</div></div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Why TD Engine                                                           -->
+<!-- ====================================================================== -->
+<section class="td-section">
+    <h2>One codebase. Two runtimes. Zero compromise.</h2>
+    <p class="section-sub">// Desktop-class performance, web-class reach</p>
+    <div class="td-code-grid">
+        <div class="col">
+            <h3>// THE PROBLEM</h3>
+            <p>
+                Most web game engines are JavaScript-first &mdash; they pay a JIT tax on every frame,
+                struggle with typed-array ergonomics, and can't reuse desktop code paths.
+                Most desktop engines (Unity, Unreal, Godot) treat the web as an afterthought export target
+                &mdash; multi-megabyte loaders, broken audio, no real multiplayer story.
+            </p>
+            <p>
+                TD Engine is built around a different bet: write portable C++17, compile it once with
+                Emscripten, ship a single ~1 MB <code>.wasm</code> file. The browser provides the platform
+                layer (canvas, audio device, input, WebSocket). The engine provides everything else.
+            </p>
+        </div>
+        <div class="col">
+            <h3>// THE CODE</h3>
+            <div class="td-code">
+<span class="com">// Same C++ runs on Windows desktop AND in the browser.</span>
+<span class="kw">auto</span>&amp; ecs = world.<span class="fn">getECS</span>();
+<span class="kw">auto</span> e = ecs.<span class="fn">createEntity</span>();
+ecs.<span class="fn">setPosition</span>(e, {<span class="num">100</span>, <span class="num">200</span>});
+ecs.<span class="fn">setSprite</span>(e, <span class="str">"ship.png"</span>);
+ecs.<span class="fn">setCollider</span>(e, {<span class="num">32</span>, <span class="num">32</span>});
+
+<span class="com">// JS bridge calls into the WASM module via cwrap:</span>
+<span class="kw">const</span> e = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">create</span>();
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setPosition</span>(e, <span class="num">100</span>, <span class="num">200</span>);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setSprite</span>(e, <span class="str">"ship.png"</span>);
+
+<span class="com">// Multiplayer is one line:</span>
+<span class="fn">TDNet</span>.<span class="prop">Peer</span>.<span class="fn">join</span>(<span class="str">"arena-1"</span>);
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Feature grid                                                            -->
+<!-- ====================================================================== -->
+<section class="td-section">
+    <h2>What's in the box</h2>
+    <p class="section-sub">// 16 production-ready subsystems, all header-only or single-.cpp</p>
+    <div class="td-features">
+        <div class="card">
+            <div class="icon">E</div>
+            <h3>Archetype ECS</h3>
+            <p>Contiguous arrays per archetype. 10,000 entities boot in &lt;5ms. Component add/remove via swap-back pop. Validated by 6 test suites.</p>
+        </div>
+        <div class="card">
+            <div class="icon">N</div>
+            <h3>Networking</h3>
+            <p>Reliable UDP transport + RPC system. Client prediction + server reconciliation. Web transport via WebSocket + BroadcastChannel (P2P cross-tab).</p>
+            <ul>
+                <li>TDNet.Socket &mdash; WebSocket transport</li>
+                <li>TDNet.Peer &mdash; BroadcastChannel P2P</li>
+                <li>TDNet.RPC &mdash; async call/result</li>
+            </ul>
+        </div>
+        <div class="card">
+            <div class="icon">V</div>
+            <h3>Voxel world</h3>
+            <p>Greedy mesher (5&ndash;10x fewer triangles). 4-octave simplex worldgen. Sunlight + BFS block light. Frustum-culled chunk streaming.</p>
+        </div>
+        <div class="card">
+            <div class="icon">U</div>
+            <h3>UI toolkit</h3>
+            <p>13 widgets (Container, Label, Button, Slider, TextInput, ScrollView, ListView, Dropdown, Modal, Tooltip, Canvas). Real flexbox layout. Virtualized 10K-item lists at &lt;1ms.</p>
+        </div>
+        <div class="card">
+            <div class="icon">S</div>
+            <h3>Scripting VM</h3>
+            <p>Custom Lua-like bytecode interpreter (3,075 LOC). Lexer &rarr; parser &rarr; compiler &rarr; stack VM. Hot-reload at runtime. Visual script graph compiler emits tdscript source.</p>
+        </div>
+        <div class="card">
+            <div class="icon">R</div>
+            <h3>Renderer</h3>
+            <p>WebGL2 / OpenGL 3.3 backend (same shaders, different GLSL version header). Sprite batcher, framebuffer effects, camera, texture atlas. ~5,000 sprites per frame at 60 FPS on a laptop.</p>
+        </div>
+        <div class="card">
+            <div class="icon">P</div>
+            <h3>Physics</h3>
+            <p>AABB collision, swept capsule controller, sliding, slope limit, step handling, ground detection. Rigid body dynamics. Validated by 4 test suites.</p>
+        </div>
+        <div class="card">
+            <div class="icon">A</div>
+            <h3>Audio</h3>
+            <p>WAV decoder, mixer, spatial 3D audio with HRTF-lite panning, Schroeder reverb, Doppler. Web Audio backend in the browser, waveOut on Windows.</p>
+        </div>
+        <div class="card">
+            <div class="icon">I</div>
+            <h3>i18n + mobile</h3>
+            <p>Locale fallback, plural forms, RTL detection (Arabic flips the HUD). Multi-touch + gestures, 6-DoF XR controllers, Standard Gamepad mapping.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Engine stack                                                            -->
+<!-- ====================================================================== -->
+<section class="td-section">
+    <h2>The stack</h2>
+    <p class="section-sub">// Four languages, one engine. Each layer has a clear job.</p>
+    <div class="td-stack">
+        <div class="layer">
+            <div class="lang">C</div>
+            <h4>Portable core</h4>
+            <p>The lowest layer &mdash; math, allocator hooks, and the plugin ABI. Pure C89 so it can be called from anywhere with no C++ runtime.</p>
+            <div class="files">src/core/* &#183; src/plugin/plugin_abi.h</div>
+        </div>
+        <div class="layer">
+            <div class="lang">C++</div>
+            <h4>Engine subsystems</h4>
+            <p>16 subsystems (ECS, renderer, physics, audio, networking, voxel, UI, scripting VM). C++17, no STL bloat, compiles to both native and WASM.</p>
+            <div class="files">src/ecs &#183; src/renderer &#183; src/net &#183; src/voxel &#183; ...</div>
+        </div>
+        <div class="layer">
+            <div class="lang">JS</div>
+            <h4>Web bridge</h4>
+            <p>Thin Emscripten <code>cwrap</code> bindings + pure-JS modules for things browsers do best (WebSocket, BroadcastChannel, IndexedDB, Web Audio).</p>
+            <div class="files">wasm/js_bridge.js &#183; web/td_api.js &#183; web/net_websocket.js</div>
+        </div>
+        <div class="layer">
+            <div class="lang">TS</div>
+            <h4>Game code</h4>
+            <p>You write your game in TypeScript (or plain JS). The engine ships .d.ts typings so your editor knows every API. No editor app &mdash; just VSCode.</p>
+            <div class="files">your-game/ &#183; tde.d.ts (planned)</div>
+        </div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Workflow                                                                -->
+<!-- ====================================================================== -->
+<section class="td-section">
+    <h2>The workflow</h2>
+    <p class="section-sub">// Your game lives in your folder. The engine lives in node_modules / a submodule. Nothing else.</p>
+    <div class="td-code-grid">
+        <div class="col">
+            <h3>// NO BUNDLED EDITOR</h3>
+            <p>
+                TD Engine is not an editor application. There is no <code>td-editor.exe</code> in the
+                default build. You write your game in <b>VSCode</b> (or any editor you like), in
+                a folder you own. The engine is a dependency you pull in.
+            </p>
+            <p>
+                This keeps your game code decoupled from the engine, lets you use any
+                build tool you want (Vite, esbuild, plain <code>tsc</code>), and means the
+                engine never has to ship a UI app that competes with the tools you
+                already know.
+            </p>
+            <p>
+                For shipping outside the browser, the <b>EXE bundler</b>
+                (<code>tools/bundler/bundle.py</code>) wraps your JS game + the engine WASM into a
+                real Inno Setup Windows installer — wizard UI, shortcuts, registry entries, file
+                associations, custom install/uninstall hooks. Sell on Steam / itch.io.
+            </p>
+        </div>
+        <div class="col">
+            <h3>// YOUR PROJECT LAYOUT</h3>
+            <div class="td-code">
+<span class="com">my-game/</span>
+<span class="com">&#9500;&#9472;&#9472; package.json</span>
+<span class="com">&#9500;&#9472;&#9472; tsconfig.json</span>
+<span class="com">&#9500;&#9472;&#9472; src/</span>
+<span class="com">&#9474;&#160;&#160;&#9500;&#9472;&#9472; player.ts</span>
+<span class="com">&#9474;&#160;&#160;&#9492;&#9472;&#9472; main.ts</span>
+<span class="com">&#9500;&#9472;&#9472; assets/</span>
+<span class="com">&#9474;&#160;&#160;&#9492;&#9472;&#9472; ship.png</span>
+<span class="com">&#9492;&#9472;&#9472; node_modules/</span>
+<span class="com">&#160;&#160;&#160;&#160;&#9492;&#9472;&#9472; td-engine/</span>
+<span class="com">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#9500;&#9472;&#9472; td-engine.wasm</span>
+<span class="com">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#9500;&#9472;&#9472; js_bridge.js</span>
+<span class="com">&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#9492;&#9472;&#9472; tde.d.ts</span>
+
+<span class="com"># Dev: open in VSCode, run `vite`,</span>
+<span class="com"># iterate. Ship: bundle to EXE (planned).</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Self-host callout                                                       -->
+<!-- ====================================================================== -->
+<section class="td-section">
+    <h2>Self-host on your own VPN</h2>
+    <p class="section-sub">// No vendor lock-in. The engine is just static files.</p>
+    <div class="td-code-grid">
+        <div class="col">
+            <h3>// DEPLOY ANYWHERE</h3>
+            <p>
+                The entire engine is a ~1 MB <code>.wasm</code> file plus ~200 KB of JS glue.
+                Drop it on GitHub Pages, your own VPS, a CDN, or an intranet &mdash; any static host works.
+            </p>
+            <p>
+                Add <code>?server=https://your-vpn.example.com/td/</code> to the page URL and the engine
+                will load all assets (wasm, js, sprites, audio) from your server instead of the default origin.
+                No recompile, no config file, no environment variables.
+            </p>
+            <p>
+                For multiplayer, run a 50-line Node.js WebSocket server (the wire format matches the C++
+                RpcServer). Point <code>TDNet.Socket</code> at it and you have internet multiplayer.
+            </p>
+        </div>
+        <div class="col">
+            <h3>// 30-SECOND SELF-HOST</h3>
+            <div class="td-code">
+<span class="com"># 1. Clone the repo</span>
+$ git clone https://github.com/hacvilke/td
+$ cd td/web
+
+<span class="com"># 2. Serve the web/ folder with anything</span>
+$ python3 -m http.server 8080
+
+<span class="com"># 3. Open in browser</span>
+$ open http://localhost:8080/
+
+<span class="com"># Or: deploy to your VPN and point
+# users at it with ?server=</span>
+https://your.site/td/?server=
+  https://vpn.example.com/td/
+
+<span class="com"># Or: just use GitHub Pages (free)</span>
+<span class="com"># (that's what the official site does)</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ====================================================================== -->
+<!-- Footer                                                                  -->
+<!-- ====================================================================== -->
+<footer class="td-footer">
+    <p>
+        TD Engine &mdash; open-source under MIT.
+        Built by <a href="https://github.com/hacvilke" target="_blank" rel="noopener">@hacvilke</a>.
+        &middot;
+        <a href="https://github.com/hacvilke/td" target="_blank" rel="noopener">Source</a>
+        &middot;
+        <a href="https://github.com/hacvilke/td/releases" target="_blank" rel="noopener">Releases</a>
+        &middot;
+        <a href="https://github.com/hacvilke/td/actions" target="_blank" rel="noopener">CI</a>
+        &middot;
+        <a href="docs.html">Docs</a>
+    </p>
+    <p style="margin-top:8px;color:#475569">
+        C / C++ core. JS / TS bridge. Same code on Windows desktop and in your browser. No external dependencies. Ever.
+    </p>
+</footer>
+
+</body>
+</html>
