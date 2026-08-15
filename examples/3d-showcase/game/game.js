@@ -261,19 +261,19 @@
     STATE.lineLife -= dt;
     if (STATE.lineLife <= 0) STATE.lineSegments.length = 0;
 
-    // 8) Camera follows player.
+    // 8) Camera follows player (first-person).
+    //    Camera is locked to the player's head position — no smoothing, no
+    //    world-space offset.  Mouse-look (yaw/pitch) controls view direction
+    //    only, so the camera always looks where the player is facing.
+    //    The previous code placed the camera at player.pos + (0, 3, 6) in
+    //    WORLD space, which meant turning 180° put the camera in front of
+    //    the player.  First-person avoids that entirely.
     if (STATE.player && !STATE.godMode) {
       const pos = TDE.physics.getPosition(STATE.player.bodyId);
-      const cam = TDS.renderer.getCameraPos();
-      // Smooth follow: camera lags behind player.
-      const targetX = pos.x;
-      const targetZ = pos.z + 6;
-      const targetY = pos.y + 3;
-      TDS.renderer.setCameraPos(
-        cam.x + (targetX - cam.x) * 0.08,
-        cam.y + (targetY - cam.y) * 0.08,
-        cam.z + (targetZ - cam.z) * 0.08
-      );
+      // Capsule: r=0.4, h=1.6 → total height 2.4m, center at pos.y.
+      // Eye height ~0.6m above capsule center (≈1.8m above feet).
+      const EYE_OFFSET_Y = 0.6;
+      TDS.renderer.setCameraPos(pos.x, pos.y + EYE_OFFSET_Y, pos.z);
     }
   }
 
