@@ -1,0 +1,8 @@
+{
+  "name": "TD Bouncing Ball Demo",
+  "version": "1.0.0",
+  "publisher": "TD Engine",
+  "id": "td-bouncing-ball",
+  "url": "https://github.com/hacvilke/td",
+  "bundle_runtime": false
+}

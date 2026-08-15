@@ -346,6 +346,7 @@
     <ul>
         <li><a href="#guide-selfhost">Self-hosting</a></li>
         <li><a href="#guide-multiplayer">Multiplayer</a></li>
+        <li><a href="#guide-bundler">EXE bundler (Inno Setup)</a></li>
         <li><a href="#guide-deprecated">Deprecated API tracker</a></li>
         <li><a href="#guide-error">Error boundary</a></li>
     </ul>
@@ -838,6 +839,97 @@ window.__TD_ERROR_ENDPOINT__ = <span class="str">'https://your.server/errors'</s
     <tr><td><code>test_net_peer.js</code></td><td>41</td><td class="desc">TDNet.Peer discovery, broadcast, directed msg, RTT, stale sweep, 3-peer mesh</td></tr>
     <tr><td>C++ tests</td><td>348</td><td class="desc">math, ecs, physics, world_init, slot_leak, ui, voxel, net, character_controller</td></tr>
 </table>
+
+<h2 id="guide-bundler">EXE bundler (Inno Setup-style installer)</h2>
+<p>
+    The EXE bundler takes a finished web game (your <code>index.html</code> + JS + assets + the engine
+    WASM runtime) and produces a real Windows installer <code>.exe</code> using
+    <a href="https://jrsoftware.org/isinfo.php" target="_blank" rel="noopener">Inno Setup</a>.
+    This is how you sell your game on Steam / itch.io outside the browser.
+</p>
+<div class="td-callout info">
+    <b>Not a self-extracting zip.</b> &nbsp;
+    The output is a real Inno Setup installer with a wizard UI, per-machine / per-user install scope,
+    Start Menu + Desktop shortcuts, registry entries, file associations (<code>.tdsave</code>,
+    <code>.tdscene</code>), custom install/uninstall hooks, optional save-data cleanup on uninstall,
+    and LZMA2 ultra compression (installers are typically 60-70% smaller than the raw files).
+</div>
+
+<h3>Architecture</h3>
+<pre><span class="com">┌─ Your game folder ──────────────────────┐</span>
+<span class="com">│  index.html + game.js + assets/         │</span>
+<span class="com">└──────────────┬──────────────────────────┘</span>
+               <span class="com">│</span>
+               <span class="kw">▼</span>
+<span class="com">┌─ tools/bundler/bundle.py ───────────────────────────┐</span>
+<span class="com">│  1. Validate game folder (needs index.html)         │</span>
+<span class="com">│  2. Stage: host/ + runtime/ + game/ (+ webview2/)   │</span>
+<span class="com">│  3. Substitute placeholders in the .iss template    │</span>
+<span class="com">│  4. Invoke ISCC.exe                                  │</span>
+<span class="com">│  5. Output: MyGame-Setup.exe                         │</span>
+<span class="com">└─────────────────────────────────────────────────────┘</span>
+</pre>
+<p>
+    The host shell (<code>src/host/</code>) is a ~300-line C++ program that creates a Win32 window,
+    embeds Microsoft Edge WebView2, and serves your game's <code>game/</code> folder over a virtual
+    HTTPS host (<code>https://td-game.local/</code>). The virtual host mapping is the key trick:
+    it makes <code>fetch()</code> work for the WASM file (which <code>file://</code> URLs block for
+    security reasons).
+</p>
+
+<h3>Quick start</h3>
+<pre><span class="com"># 1. Install Inno Setup 6+ (Windows-only, free)</span>
+<span class="com">#    https://jrsoftware.org/isdl.php</span>
+
+<span class="com"># 2. Build the host shell + web runtime</span>
+$ cmake -B build -S . -DTD_BUILD_HOST=ON
+$ cmake --build build --target td-host
+$ make web
+
+<span class="com"># 3. Bundle your game</span>
+$ python tools/bundler/bundle.py \
+    --game my-game \
+    --name <span class="str">"My Cool Game"</span> \
+    --version 1.0.0 \
+    --publisher <span class="str">"Some Studio"</span> \
+    --icon my-game/assets/icon.ico \
+    --out MyCoolGame-Setup.exe
+
+<span class="com"># 4. Double-click MyCoolGame-Setup.exe to install</span>
+</pre>
+
+<h3>Installed layout</h3>
+<pre><span class="com">C:\Program Files\My Cool Game\</span>
+<span class="com">├── MyCoolGame.exe              ← WebView2 host shell</span>
+<span class="com">├── runtime\</span>
+<span class="com">│   ├── td-engine.js            ← Emscripten glue</span>
+<span class="com">│   ├── td-engine.wasm          ← compiled C++ engine</span>
+<span class="com">│   ├── js_bridge.js            ← TDBridge global</span>
+<span class="com">│   └── *.js                    ← other web/ modules</span>
+<span class="com">├── game\</span>
+<span class="com">│   ├── index.html              ← your game's entry point</span>
+<span class="com">│   ├── game.js</span>
+<span class="com">│   └── assets\</span>
+<span class="com">└── unins000.exe                ← Inno Setup uninstaller</span>
+</pre>
+<p>
+    Per-user save data lives in <code>%APPDATA%\Some Studio\My Cool Game\saves\</code> — this is
+    NOT touched during install or update, only optionally during uninstall (with a user prompt,
+    never silent).
+</p>
+
+<h3>Custom install/uninstall steps</h3>
+<p>
+    Two ways to add custom logic:
+</p>
+<ol>
+    <li><b>Custom <code>.iss</code></b> — drop an <code>installer.iss</code> in your game folder. <code>bundle.py</code> will use it instead of the default template. Copy <code>installer/td-game-template.iss</code> and modify.</li>
+    <li><b>Host hooks</b> — implement <code>--post-install</code> and <code>--pre-uninstall</code> in <code>src/host/webview_host.cpp</code>. The installer probes the registry to check if your host supports these hooks before calling them.</li>
+</ol>
+<p>
+    See <a href="https://github.com/hacvilke/td/blob/main/tools/bundler/README.md" target="_blank" rel="noopener"><b>tools/bundler/README.md</b></a>
+    for the full CLI reference, production WebView2 SDK setup, CI integration guide, and troubleshooting.
+</p>
 
 <h2 id="ref-roadmap">Roadmap</h2>
 <p>

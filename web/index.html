@@ -549,9 +549,10 @@ ecs.<span class="fn">setCollider</span>(e, {<span class="num">32</span>, <span c
                 already know.
             </p>
             <p>
-                For shipping outside the browser, the planned <b>EXE bundler</b>
-                (roadmap) will wrap your JS game + the engine WASM into a single
-                Windows <code>.exe</code> so you can sell it on Steam / itch.io.
+                For shipping outside the browser, the <b>EXE bundler</b>
+                (<code>tools/bundler/bundle.py</code>) wraps your JS game + the engine WASM into a
+                real Inno Setup Windows installer — wizard UI, shortcuts, registry entries, file
+                associations, custom install/uninstall hooks. Sell on Steam / itch.io.
             </p>
         </div>
         <div class="col">

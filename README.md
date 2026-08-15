@@ -338,9 +338,14 @@ td-engine/
 │   ├── physics/        # AABB, collision, rigid bodies
 │   ├── audio/          # WAV loading, mixing, playback
 │   ├── assets/         # PNG decoder, OBJ loader
-│   └── ecs/            # Entity, component, system, world, beat system
-├── editor/             # Visual editor application (desktop)
-├── examples/           # Pong and platformer games (C++ desktop)
+│   ├── ecs/            # Entity, component, system, world, beat system
+│   └── host/           # WebView2 host shell for the EXE bundler (Windows-only)
+├── editor/             # Visual editor application (desktop, OFF by default)
+├── examples/           # Pong, platformer (C++ desktop) + web-game/ (JS sample)
+├── installer/          # Inno Setup script template for the EXE bundler
+├── tools/              # Code generation + bundler scripts
+│   ├── gen_font.py     # Bitmap font generator
+│   └── bundler/        # EXE bundler (bundle.py + README.md)
 ├── tests/              # Unit tests + regression tests
 ├── assets/shaders/     # GLSL shader files
 ├── docs/               # PUBLIC_APIS.md, RHYTHM_MECHANICS.md, MODULARITY_ROADMAP.md
@@ -350,7 +355,7 @@ td-engine/
 │   └── README.md            # Build + run instructions
 └── web/                # Browser-facing files
     ├── index.html           # Homepage (hero, stack diagram, workflow, self-host guide)
-    ├── docs.html            # Documentation (API reference + guides)
+    ├── docs.html            # Documentation (API reference + guides + EXE bundler section)
     ├── style.css            # Dark theme + #00D4FF accent
     ├── GETTING_STARTED.md   # 11-section guide for web game developers
     ├── td_api.js            # TDEngine.* namespace (lifecycle, ecs, input, beat, ...)
@@ -459,7 +464,29 @@ The recommended workflow is to write your game in VSCode (in a folder you own), 
 4. Run a `requestAnimationFrame` loop that reads input, updates game state in JS, and pushes changes to the engine via the cwrap'd functions.
 5. The engine's WASM main loop (driven by `emscripten_set_main_loop`) renders every frame.
 
-For TypeScript, use the same `TDBridge` global — it's declared via JSDoc and works in both plain JS and TS files. See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for the full API reference. The planned **EXE bundler** (roadmap) will wrap your finished JS game into a single Windows `.exe` for Steam / itch.io distribution.
+For TypeScript, use the same `TDBridge` global — it's declared via JSDoc and works in both plain JS and TS files. See [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) for the full API reference.
+
+## Shipping outside the browser (EXE bundler)
+
+To sell your game on Steam / itch.io, use the **Inno Setup-style EXE bundler**:
+
+```bash
+# 1. Build the host shell + web runtime
+cmake -B build -S . -DTD_BUILD_HOST=ON
+cmake --build build --target td-host
+make web
+
+# 2. Bundle your game into a Windows installer
+python tools/bundler/bundle.py \
+    --game my-game \
+    --name "My Cool Game" \
+    --version 1.0.0 \
+    --publisher "Some Studio" \
+    --icon my-game/assets/icon.ico \
+    --out MyCoolGame-Setup.exe
+```
+
+The output is a real Inno Setup installer (`MyCoolGame-Setup.exe`) with a wizard UI, Start Menu + Desktop shortcuts, registry entries, file associations (`.tdsave` / `.tdscene`), custom install/uninstall hooks, and LZMA2 ultra compression. See [`tools/bundler/README.md`](tools/bundler/README.md) for the full guide.
 
 ## What does NOT change between desktop and web
 

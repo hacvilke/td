@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TD Bouncing Ball</title>
+    <style>
+        html, body {
+            margin: 0; padding: 0;
+            background: #0a0e14;
+            overflow: hidden;
+            font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+            color: #cbd5e1;
+        }
+        #game-canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        #hud {
+            position: fixed; top: 12px; left: 12px;
+            background: rgba(10, 14, 20, 0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 12px;
+            color: #67e8f9;
+            z-index: 10;
+        }
+        #hud b { color: #e2e8f0; }
+        #crash {
+            position: fixed; inset: 0;
+            display: none;
+            align-items: center; justify-content: center;
+            background: rgba(10, 14, 20, 0.95);
+            color: #f87171;
+            font-size: 14px;
+            text-align: center;
+            z-index: 100;
+        }
+        #crash pre {
+            max-width: 80vw;
+            background: #0d1118;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 16px;
+            overflow: auto;
+            text-align: left;
+            color: #fcd34d;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+    <div id="hud">
+        <b>TD Bouncing Ball</b> &middot; <span id="fps">--</span> FPS &middot; <span id="entities">--</span> entities
+    </div>
+    <div id="crash">
+        <div>
+            <h2>Engine crashed</h2>
+            <pre id="crash-stack"></pre>
+        </div>
+    </div>
+
+    <!-- Engine runtime (shipped in runtime/ by the bundler) -->
+    <script src="runtime/td-engine.js"></script>
+    <script src="runtime/js_bridge.js"></script>
+    <script src="runtime/td_api.js"></script>
+
+    <!-- Game code -->
+    <script src="game.js"></script>
+</body>
+</html>

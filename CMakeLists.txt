@@ -14,6 +14,7 @@
 #
 # Common options:
 #   -DTD_BUILD_EDITOR=ON   Build the desktop editor (default OFF — see docs.html)
+#   -DTD_BUILD_HOST=ON     Build the WebView2 host shell for the EXE bundler (default OFF, Windows-only)
 #   -DTD_BUILD_EXAMPLES=ON Build pong + platformer (default ON)
 #   -DTD_BUILD_TESTS=ON    Build unit tests (default ON)
 # =============================================================================
@@ -24,6 +25,8 @@ project(TDEngine VERSION 1.0.0 LANGUAGES CXX)
 # --- Build options -----------------------------------------------------------
 option(TD_BUILD_WEB      "Build for WebAssembly (requires Emscripten)" OFF)
 option(TD_BUILD_EDITOR   "Build the desktop editor"                     OFF)
+option(TD_BUILD_HOST     "Build the WebView2 host shell (EXE bundler)"   OFF)
+option(TD_HOST_DEV_TOOLS "Enable WebView2 dev tools in the host shell (dev builds)" OFF)
 option(TD_BUILD_EXAMPLES "Build pong + platformer examples"             ON)
 option(TD_BUILD_TESTS    "Build unit tests"                              ON)
 
@@ -323,11 +326,37 @@ else()
         )
     endif()
 
+    # --- WebView2 Host Shell (for EXE bundler) ------------------------------
+    # Windows-only. This is the native .exe that embeds Edge WebView2 to run
+    # a finished JS game outside the browser. The EXE bundler (tools/bundler/
+    # bundle.py) copies this .exe + the game + the WASM runtime into a staging
+    # dir, then Inno Setup packages it into a Windows installer.
+    #
+    # The host dynamically loads WebView2Loader.dll at runtime, so there's no
+    # link-time dependency on the WebView2 SDK. To enable dev tools in dev
+    # builds, build with -DTD_HOST_DEV_TOOLS=ON.
+    if(TD_BUILD_HOST AND WIN32 AND NOT TD_BUILD_WEB)
+        add_executable(td-host
+            src/host/main.cpp
+            src/host/webview_host.cpp
+        )
+        target_link_libraries(td-host PRIVATE td-engine)
+        target_include_directories(td-host PRIVATE ${CMAKE_SOURCE_DIR}/src/host)
+        set_target_properties(td-host PROPERTIES
+            OUTPUT_NAME "td-host"
+            RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+        )
+        if(TD_HOST_DEV_TOOLS)
+            target_compile_definitions(td-host PRIVATE TD_HOST_DEV_TOOLS=1)
+        endif()
+    endif()
+
     message(STATUS "============================")
     message(STATUS " TD Engine: Desktop build")
     message(STATUS "============================")
     message(STATUS " Platform layer: ${PLATFORM_SOURCES}")
     message(STATUS " Editor:   $<IF:$<BOOL:${TD_BUILD_EDITOR}>,yes,no>")
+    message(STATUS " Host:     $<IF:$<AND:$<BOOL:${TD_BUILD_HOST}>,$<BOOL:${WIN32}>>,yes,no>")
     message(STATUS " Examples: $<IF:$<BOOL:${TD_BUILD_EXAMPLES}>,yes,no>")
     message(STATUS " Tests:    $<IF:$<BOOL:${TD_BUILD_TESTS}>,yes,no>")
     message(STATUS "")
