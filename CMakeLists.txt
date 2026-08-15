@@ -92,6 +92,11 @@ set(ENGINE_PORTABLE_SOURCES
     src/physics/collision.cpp
     src/physics/rigidbody.cpp
     src/physics/character_controller.cpp
+    src/physics/rigidbody3d.cpp
+    src/physics/collider3d.cpp
+    src/physics/broadphase_3d.cpp
+    src/physics/constraints_3d.cpp
+    src/physics/physics_world_3d.cpp
     src/audio/wav_loader.cpp
     src/audio/mixer.cpp
     src/audio/spatial_audio.cpp

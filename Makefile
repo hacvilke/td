@@ -85,6 +85,11 @@ WASM_ENGINE_SRC = \
         $(SRC_DIR)/physics/aabb.cpp \
         $(SRC_DIR)/physics/collision.cpp \
         $(SRC_DIR)/physics/rigidbody.cpp \
+        $(SRC_DIR)/physics/rigidbody3d.cpp \
+        $(SRC_DIR)/physics/collider3d.cpp \
+        $(SRC_DIR)/physics/broadphase_3d.cpp \
+        $(SRC_DIR)/physics/constraints_3d.cpp \
+        $(SRC_DIR)/physics/physics_world_3d.cpp \
         $(SRC_DIR)/audio/wav_loader.cpp \
         $(SRC_DIR)/audio/mixer.cpp \
         $(SRC_DIR)/assets/png_decoder.cpp \
@@ -120,36 +125,36 @@ EMCCFLAGS ?= -O2 -std=c++17 -Wall \
 .PHONY: all web examples editor clean clean-web help
 
 all: dirs $(ENGINE_LIB) $(PONG_EXE) $(PLAT_EXE)
-	@echo "Desktop build complete: $(BIN_DIR)/"
+        @echo "Desktop build complete: $(BIN_DIR)/"
 
 # Create output directories (Windows mkdir syntax - works in MinGW cmd shell).
 dirs:
-	@if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)
-	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
-	@if not exist $(LIB_DIR) mkdir $(LIB_DIR)
-	@if not exist $(BIN_DIR) mkdir $(BIN_DIR)
+        @if not exist $(BUILD_DIR) mkdir $(BUILD_DIR)
+        @if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
+        @if not exist $(LIB_DIR) mkdir $(LIB_DIR)
+        @if not exist $(BIN_DIR) mkdir $(BIN_DIR)
 
 # --- Object file compilation -------------------------------------------------
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@if not exist $(dir $@) mkdir $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+        @if not exist $(dir $@) mkdir $(dir $@)
+        $(CXX) $(CXXFLAGS) -c $< -o $@
 
 # --- Engine static library ---------------------------------------------------
 $(ENGINE_LIB): $(ENGINE_OBJ)
-	$(AR) rcs $@ $^
+        $(AR) rcs $@ $^
 
 # --- Pong example ------------------------------------------------------------
 $(PONG_EXE): examples/pong/main.cpp $(ENGINE_LIB)
-	$(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
+        $(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
 
 # --- Platformer example ------------------------------------------------------
 $(PLAT_EXE): examples/platformer/main.cpp $(ENGINE_LIB)
-	$(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
+        $(CXX) $(CXXFLAGS) $< $(ENGINE_LIB) $(WIN_LIBS) -o $@
 
 # --- Editor (desktop) --------------------------------------------------------
 editor: dirs $(ENGINE_LIB)
-	@if exist editor\main.cpp \
-	$(CXX) $(CXXFLAGS) $(wildcard editor/*.cpp) $(ENGINE_LIB) $(WIN_LIBS) -o $(EDITOR_EXE)
+        @if exist editor\main.cpp \
+        $(CXX) $(CXXFLAGS) $(wildcard editor/*.cpp) $(ENGINE_LIB) $(WIN_LIBS) -o $(EDITOR_EXE)
 
 examples: $(PONG_EXE) $(PLAT_EXE)
 
@@ -161,18 +166,18 @@ examples: $(PONG_EXE) $(PLAT_EXE)
 web: $(WEB_DIR)/td-engine.js
 
 $(WEB_DIR)/td-engine.js: $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC)
-	@mkdir -p $(WEB_DIR)
-	$(EMXX) $(EMCCFLAGS) $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC) -o $(WEB_DIR)/td-engine.js
-	@cp wasm/js_bridge.js $(WEB_DIR)/js_bridge.js
-	@echo ""
-	@echo "WebAssembly build complete:"
-	@echo "  $(WEB_DIR)/td-engine.js   (emcc glue)"
-	@echo "  $(WEB_DIR)/td-engine.wasm (binary)"
-	@echo "  $(WEB_DIR)/js_bridge.js   (TDBridge, copied from wasm/)"
-	@echo ""
-	@echo "To run locally:"
-	@echo "  cd web && python3 -m http.server 8000"
-	@echo "  # then open http://localhost:8000 in a browser"
+        @mkdir -p $(WEB_DIR)
+        $(EMXX) $(EMCCFLAGS) $(WASM_ENGINE_SRC) $(WASM_MAIN_SRC) -o $(WEB_DIR)/td-engine.js
+        @cp wasm/js_bridge.js $(WEB_DIR)/js_bridge.js
+        @echo ""
+        @echo "WebAssembly build complete:"
+        @echo "  $(WEB_DIR)/td-engine.js   (emcc glue)"
+        @echo "  $(WEB_DIR)/td-engine.wasm (binary)"
+        @echo "  $(WEB_DIR)/js_bridge.js   (TDBridge, copied from wasm/)"
+        @echo ""
+        @echo "To run locally:"
+        @echo "  cd web && python3 -m http.server 8000"
+        @echo "  # then open http://localhost:8000 in a browser"
 
 # =============================================================================
 # Tests
@@ -192,49 +197,49 @@ TEST_BIN_DIR := $(BUILD_DIR)/bin
 # These compile small and fast; we link them into both test_net and
 # test_net_json_rpc.
 NET_TEST_SRC := \
-	$(SRC_DIR)/net/transport.cpp \
-	$(SRC_DIR)/net/server_authoritative.cpp \
-	$(SRC_DIR)/net/json_rpc.cpp
+        $(SRC_DIR)/net/transport.cpp \
+        $(SRC_DIR)/net/server_authoritative.cpp \
+        $(SRC_DIR)/net/json_rpc.cpp
 
 # Sources for the TDScript compiler test (lexer + parser + codegen).
 TDSCRIPT_TEST_SRC := \
-	$(SRC_DIR)/scripting/tdscript/lexer.cpp \
-	$(SRC_DIR)/scripting/tdscript/parser.cpp \
-	$(SRC_DIR)/scripting/tdscript/codegen_js.cpp \
-	$(SRC_DIR)/scripting/tdscript/tdscript.cpp
+        $(SRC_DIR)/scripting/tdscript/lexer.cpp \
+        $(SRC_DIR)/scripting/tdscript/parser.cpp \
+        $(SRC_DIR)/scripting/tdscript/codegen_js.cpp \
+        $(SRC_DIR)/scripting/tdscript/tdscript.cpp
 
 # Per-test compile recipe. -DTEST_STUB_LOGGER lets the test build without
 # the real Logger (which #includes <windows.h> on desktop).
 $(TEST_BIN_DIR)/test_net_json_rpc: tests/test_net_json_rpc.cpp $(NET_TEST_SRC) tests/stub_logger.cpp
-	@mkdir -p $(TEST_BIN_DIR)
-	$(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) -DTEST_STUB_LOGGER \
-	        tests/test_net_json_rpc.cpp $(NET_TEST_SRC) tests/stub_logger.cpp \
-	        -lpthread -o $@
+        @mkdir -p $(TEST_BIN_DIR)
+        $(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) -DTEST_STUB_LOGGER \
+                tests/test_net_json_rpc.cpp $(NET_TEST_SRC) tests/stub_logger.cpp \
+                -lpthread -o $@
 
 $(TEST_BIN_DIR)/test_net: tests/test_net.cpp $(NET_TEST_SRC) tests/stub_logger.cpp
-	@mkdir -p $(TEST_BIN_DIR)
-	$(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) -DTEST_STUB_LOGGER \
-	        tests/test_net.cpp $(NET_TEST_SRC) tests/stub_logger.cpp \
-	        -lpthread -o $@
+        @mkdir -p $(TEST_BIN_DIR)
+        $(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) -DTEST_STUB_LOGGER \
+                tests/test_net.cpp $(NET_TEST_SRC) tests/stub_logger.cpp \
+                -lpthread -o $@
 
 $(TEST_BIN_DIR)/test_tdscript_compiler: tests/test_tdscript_compiler.cpp $(TDSCRIPT_TEST_SRC)
-	@mkdir -p $(TEST_BIN_DIR)
-	$(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) \
-	        tests/test_tdscript_compiler.cpp $(TDSCRIPT_TEST_SRC) \
-	        -lpthread -o $@
+        @mkdir -p $(TEST_BIN_DIR)
+        $(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) \
+                tests/test_tdscript_compiler.cpp $(TDSCRIPT_TEST_SRC) \
+                -lpthread -o $@
 
 # Run all C++ tests. Exits non-zero if any test fails.
 test: $(TEST_BIN_DIR)/test_net $(TEST_BIN_DIR)/test_net_json_rpc $(TEST_BIN_DIR)/test_tdscript_compiler
-	@echo "Running C++ tests..."
-	@$(TEST_BIN_DIR)/test_net; r1=$$?; \
-	 $(TEST_BIN_DIR)/test_net_json_rpc; r2=$$?; \
-	 $(TEST_BIN_DIR)/test_tdscript_compiler; r3=$$?; \
-	 if [ $$r1 -eq 0 ] && [ $$r2 -eq 0 ] && [ $$r3 -eq 0 ]; then \
-	   echo "All C++ tests passed."; \
-	 else \
-	   echo "Some C++ tests failed (net=$$r1, json_rpc=$$r2, tdscript=$$r3)."; \
-	   exit 1; \
-	 fi
+        @echo "Running C++ tests..."
+        @$(TEST_BIN_DIR)/test_net; r1=$$?; \
+         $(TEST_BIN_DIR)/test_net_json_rpc; r2=$$?; \
+         $(TEST_BIN_DIR)/test_tdscript_compiler; r3=$$?; \
+         if [ $$r1 -eq 0 ] && [ $$r2 -eq 0 ] && [ $$r3 -eq 0 ]; then \
+           echo "All C++ tests passed."; \
+         else \
+           echo "Some C++ tests failed (net=$$r1, json_rpc=$$r2, tdscript=$$r3)."; \
+           exit 1; \
+         fi
 
 .PHONY: test
 
@@ -242,33 +247,33 @@ test: $(TEST_BIN_DIR)/test_net $(TEST_BIN_DIR)/test_net_json_rpc $(TEST_BIN_DIR)
 # Clean
 # =============================================================================
 clean:
-	@if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
+        @if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
 
 clean-web:
-	@del /q $(WEB_DIR)\td-engine.js $(WEB_DIR)\td-engine.wasm 2>nul
-	@del /q $(WEB_DIR)\td-engine.data 2>nul
+        @del /q $(WEB_DIR)\td-engine.js $(WEB_DIR)\td-engine.wasm 2>nul
+        @del /q $(WEB_DIR)\td-engine.data 2>nul
 
 # =============================================================================
 # Help
 # =============================================================================
 help:
-	@echo "TD Engine Makefile targets:"
-	@echo ""
-	@echo "Desktop (MinGW / MSVC):"
-	@echo "  make           - build engine lib + pong + platformer (default)"
-	@echo "  make editor    - build the desktop editor (if editor/*.cpp exist)"
-	@echo "  make examples  - build pong + platformer"
-	@echo "  make clean     - remove all desktop build artifacts"
-	@echo ""
-	@echo "WebAssembly (requires Emscripten on PATH):"
-	@echo "  make web       - build web/td-engine.js + web/td-engine.wasm"
-	@echo "  make clean-web - remove only the WASM bundle"
-	@echo ""
-	@echo "To run the web build:"
-	@echo "  make web"
-	@echo "  cd web"
-	@echo "  python3 -m http.server 8000"
-	@echo "  # open http://localhost:8000 in a browser"
+        @echo "TD Engine Makefile targets:"
+        @echo ""
+        @echo "Desktop (MinGW / MSVC):"
+        @echo "  make           - build engine lib + pong + platformer (default)"
+        @echo "  make editor    - build the desktop editor (if editor/*.cpp exist)"
+        @echo "  make examples  - build pong + platformer"
+        @echo "  make clean     - remove all desktop build artifacts"
+        @echo ""
+        @echo "WebAssembly (requires Emscripten on PATH):"
+        @echo "  make web       - build web/td-engine.js + web/td-engine.wasm"
+        @echo "  make clean-web - remove only the WASM bundle"
+        @echo ""
+        @echo "To run the web build:"
+        @echo "  make web"
+        @echo "  cd web"
+        @echo "  python3 -m http.server 8000"
+        @echo "  # open http://localhost:8000 in a browser"
 
 # =============================================================================
 # Phony / pattern rule
