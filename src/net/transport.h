@@ -229,6 +229,16 @@ private:
     };
     std::vector<PendingCall> m_pending;
     uint32_t m_nextCallId = 1;
+
+    // Track whether the current Request being dispatched has already been
+    // responded to (via sendResponse/sendError) by the handler. If so,
+    // dispatchPacket skips the auto-null fallback. Reset at the start of
+    // each Request dispatch.
+    uint32_t m_dispatchedCallId = 0;
+    bool     m_respondedDuringDispatch = false;
+    void     markResponded(uint32_t callId) {
+        if (callId == m_dispatchedCallId) m_respondedDuringDispatch = true;
+    }
 };
 
 } // namespace td

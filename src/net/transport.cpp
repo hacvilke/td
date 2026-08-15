@@ -1393,6 +1393,7 @@ uint32_t RpcServer::callWithReply(const char* name, const char* argsJson,
 
 bool RpcServer::sendResponse(uint32_t callId, const char* resultJson, int targetPeer) {
     if (!m_peer) return false;
+    markResponded(callId);
     std::string frame;
     td::net::encodeResponse(frame, callId, resultJson ? resultJson : "null");
     NetPacket pkt;
@@ -1406,6 +1407,7 @@ bool RpcServer::sendResponse(uint32_t callId, const char* resultJson, int target
 
 bool RpcServer::sendError(uint32_t callId, const char* errorMessage, int targetPeer) {
     if (!m_peer) return false;
+    markResponded(callId);
     std::string frame;
     td::net::encodeError(frame, callId, errorMessage ? errorMessage : "error");
     NetPacket pkt;
@@ -1430,32 +1432,30 @@ void RpcServer::dispatchPacket(int peerId, const void* data, int size) {
 
     switch (frame.kind) {
         case td::net::RpcFrame::Kind::Request: {
-            // Dispatch to registered handlers.
+            // Dispatch to registered handlers. Track whether the handler
+            // calls sendResponse/sendError during dispatch so we don't
+            // auto-send a duplicate null response.
+            m_dispatchedCallId = frame.id;
+            m_respondedDuringDispatch = false;
+
             std::string event = std::string("rpc:") + frame.method;
             SignalPayload p;
             p.intValue = peerId;
             p.setStr(frame.argsJson.c_str());
             SignalBus::get().emit(event.c_str(), p);
 
-            // If no handler was registered (we can't tell directly from
-            // SignalBus — it just no-ops), send an error response so the
-            // caller doesn't time out. We detect "no handler" by checking
-            // whether the event exists in the bus.
-            //
-            // For now, we always send a success response with `null` result
-            // if the method had no handler. The caller's contract is: if
-            // you care about the result, register a handler that returns
-            // something meaningful. (This matches the JS side's behavior:
-            // unknown methods return an error; methods with no return value
-            // return undefined.)
-            if (SignalBus::get().eventExists(event.c_str())) {
-                // Handler ran. We don't currently capture its return value
-                // (the SignalBus payload can't carry an arbitrary string
-                // back out). For request/response semantics, the handler
-                // should call sendResponse() explicitly with the result.
-                //
-                // If it didn't, we send a null response so the caller
-                // doesn't hang.
+            const bool handlerExists = SignalBus::get().eventExists(event.c_str());
+            const bool alreadyResponded = m_respondedDuringDispatch;
+
+            // Clear dispatch state so future direct calls to sendResponse
+            // (e.g. late async replies) aren't mistakenly tracked.
+            m_dispatchedCallId = 0;
+            m_respondedDuringDispatch = false;
+
+            if (alreadyResponded) {
+                // Handler sent its own Response/Error. Do nothing.
+            } else if (handlerExists) {
+                // Handler ran but didn't reply — send null so caller doesn't hang.
                 sendResponse(frame.id, "null", peerId);
             } else {
                 sendError(frame.id,

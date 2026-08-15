@@ -109,6 +109,17 @@ set(ENGINE_PORTABLE_SOURCES
     src/net/json_rpc.cpp
 )
 
+# WebSocketPeer has two implementations:
+#   - websocket_peer.cpp       — native (Win32 + POSIX), real RFC 6455 + SHA-1
+#   - websocket_peer_wasm.cpp  — WASM, uses Emscripten's <emscripten/websocket.h>
+# The CMake branch below selects the right one. Both implement the same
+# header (src/net/websocket_peer.h) and the same NetPeer interface.
+if(TD_BUILD_WEB)
+    list(APPEND ENGINE_PORTABLE_SOURCES src/net/websocket_peer_wasm.cpp)
+else()
+    list(APPEND ENGINE_PORTABLE_SOURCES src/net/websocket_peer.cpp)
+endif()
+
 # NOTE: src/td/ (custom scripting VM) and src/net/ (Winsock socket/server/client)
 # were removed in the engine cleanup pass. The scripting VM was never wired up
 # to a C API or JS bridge; networking was never used by any example/editor/test.
