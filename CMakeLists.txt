@@ -36,6 +36,27 @@ if(NOT CMAKE_BUILD_TYPE AND NOT TD_BUILD_WEB)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# --- Windows-specific compile definitions -----------------------------------
+# These MUST be set BEFORE any target that includes <windows.h> so the macros
+# are visible at the point of #include. Setting them globally via
+# add_compile_definitions ensures every target (engine + tests + examples)
+# gets them — target_compile_definitions on td-engine alone is not enough
+# because the test executables also #include windows.h via engine headers.
+#
+# NOMINMAX          — prevents windows.h from defining min/max as macros,
+#                     which would break std::min/std::max calls (36 usages
+#                     across src/). This was the root cause of the MSVC
+#                     BUILD step failure after the Threads::Threads fix
+#                     let configure pass.
+# WIN32_LEAN_AND_MEAN — excludes rarely-used Windows headers from windows.h,
+#                     speeding up compilation and avoiding some macro conflicts.
+# _CRT_SECURE_NO_WARNINGS — suppresses MSVC warnings about snprintf/strcpy/
+#                     fopen being "unsafe". We use the standard C functions
+#                     intentionally; they're portable and safe when used correctly.
+if(WIN32 AND NOT TD_BUILD_WEB)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # --- Output directories ------------------------------------------------------
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
