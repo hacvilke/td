@@ -8,14 +8,23 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='17' y='4' width='30' height='6' rx='1.5' fill='%2367e8f9'/><rect x='29' y='4' width='6' height='30' rx='1.5' fill='%2367e8f9'/><path d='M 8 42 Q 8 32, 20 32 L 44 32 Q 56 32, 56 42 L 56 46 L 8 46 Z' fill='%2367e8f9'/></svg>">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>TD Engine — Documentation</title>
-    <link rel="stylesheet" href="style.css?v=24">
+    <link rel="stylesheet" href="style.css?v=25">
     <style>
+        /* Override web/style.css's `html, body { overflow: hidden; height: 100% }`
+           — that rule is for the game player canvas. The docs page must scroll. */
         html, body {
             margin: 0; padding: 0;
             background: #0a0e14;
             color: #cbd5e1;
             font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
+            width: auto;
+            height: auto;
+            min-height: 100vh;
+            overflow-x: hidden;
+            overflow-y: visible;
+            user-select: text;
+            -webkit-user-select: text;
         }
         body { padding-top: 0; }
 

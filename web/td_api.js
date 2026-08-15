@@ -272,11 +272,203 @@
   };
 
   // -------------------------------------------------------------------------
+  // Subsystem: 3D Physics (PhysicsWorld3D)
+  //
+  // Full 3D rigid body physics: spheres, boxes, capsules, convex hulls.
+  // Sequential impulse solver with Coulomb friction, restitution, sleeping,
+  // and constraints (distance, point, hinge).  Backed by the new
+  // src/physics/physics_world_3d.{h,cpp} C++ engine, exposed via the
+  // td_physics_* C bridge in wasm/emscripten_main.cpp.
+  //
+  // Usage:
+  //   TDEngine.physics.init(0, -9.81, 0);                 // create world with gravity
+  //   const floor = TDEngine.physics.addBody(0, 0,-5, 0, true);  // static floor
+  //   TDEngine.physics.setBoxCollider(floor, 10, 1, 10);
+  //   const ball = TDEngine.physics.addBody(1, 0, 5, 0, false);
+  //   TDEngine.physics.setSphereCollider(ball, 0.5);
+  //   TDEngine.physics.setRestitution(ball, 0.8);
+  //   // Each frame:
+  //   TDEngine.physics.step(1/60);
+  //   const pos = TDEngine.physics.getPosition(ball);     // {x, y, z}
+  // -------------------------------------------------------------------------
+  const physics = {
+    // ---- World lifecycle -------------------------------------------------
+    init(gravityX, gravityY, gravityZ) {
+      return wrap('td_physics_init', 'number', ['number','number','number'])
+        .call(null, gravityX, gravityY, gravityZ);
+    },
+    shutdown() { wrap('td_physics_shutdown', null, []).call(null); },
+    step(dt)   { wrap('td_physics_step', null, ['number']).call(null, dt); },
+
+    // ---- Body management -------------------------------------------------
+    // addBody(mass, x, y, z, isStatic) -> bodyId
+    addBody(mass, x, y, z, isStatic) {
+      return wrap('td_physics_add_body', 'number',
+                  ['number','number','number','number','number'])
+        .call(null, mass, x, y, z, isStatic ? 1 : 0);
+    },
+    bodyCount() {
+      return wrap('td_physics_body_count', 'number', []).call(null);
+    },
+
+    // ---- Colliders -------------------------------------------------------
+    setSphereCollider(bodyId, radius, offX=0, offY=0, offZ=0) {
+      wrap('td_physics_set_sphere_collider', null,
+           ['number','number','number','number','number'])
+        .call(null, bodyId, radius, offX, offY, offZ);
+    },
+    setBoxCollider(bodyId, hx, hy, hz, offX=0, offY=0, offZ=0) {
+      wrap('td_physics_set_box_collider', null,
+           ['number','number','number','number','number','number','number'])
+        .call(null, bodyId, hx, hy, hz, offX, offY, offZ);
+    },
+    setCapsuleCollider(bodyId, radius, height, axis=1, offX=0, offY=0, offZ=0) {
+      wrap('td_physics_set_capsule_collider', null,
+           ['number','number','number','number','number','number','number'])
+        .call(null, bodyId, radius, height, axis, offX, offY, offZ);
+    },
+
+    // ---- Body state ------------------------------------------------------
+    setPosition(bodyId, x, y, z) {
+      wrap('td_physics_set_position', null, ['number','number','number','number'])
+        .call(null, bodyId, x, y, z);
+    },
+    setVelocity(bodyId, vx, vy, vz) {
+      wrap('td_physics_set_velocity', null, ['number','number','number','number'])
+        .call(null, bodyId, vx, vy, vz);
+    },
+    getPosition(bodyId) {
+      const Module = ensureModule();
+      const ptr = Module._malloc(12);   // 3 floats
+      wrap('td_physics_get_position', null,
+           ['number','number','number','number'])
+        .call(null, bodyId, ptr, ptr+4, ptr+8);
+      const result = {
+        x: Module.HEAPF32[ptr >> 2],
+        y: Module.HEAPF32[(ptr+4) >> 2],
+        z: Module.HEAPF32[(ptr+8) >> 2],
+      };
+      Module._free(ptr);
+      return result;
+    },
+    getVelocity(bodyId) {
+      const Module = ensureModule();
+      const ptr = Module._malloc(12);
+      wrap('td_physics_get_velocity', null,
+           ['number','number','number','number'])
+        .call(null, bodyId, ptr, ptr+4, ptr+8);
+      const result = {
+        x: Module.HEAPF32[ptr >> 2],
+        y: Module.HEAPF32[(ptr+4) >> 2],
+        z: Module.HEAPF32[(ptr+8) >> 2],
+      };
+      Module._free(ptr);
+      return result;
+    },
+    getOrientation(bodyId) {
+      // Returns quaternion {x, y, z, w}
+      const Module = ensureModule();
+      const ptr = Module._malloc(16);   // 4 floats
+      wrap('td_physics_get_orientation', null,
+           ['number','number','number','number','number'])
+        .call(null, bodyId, ptr, ptr+4, ptr+8, ptr+12);
+      const result = {
+        x: Module.HEAPF32[ptr >> 2],
+        y: Module.HEAPF32[(ptr+4) >> 2],
+        z: Module.HEAPF32[(ptr+8) >> 2],
+        w: Module.HEAPF32[(ptr+12) >> 2],
+      };
+      Module._free(ptr);
+      return result;
+    },
+
+    // ---- Forces / impulses ----------------------------------------------
+    applyForce(bodyId, fx, fy, fz) {
+      wrap('td_physics_apply_force', null, ['number','number','number','number'])
+        .call(null, bodyId, fx, fy, fz);
+    },
+    applyImpulse(bodyId, ix, iy, iz) {
+      wrap('td_physics_apply_impulse', null, ['number','number','number','number'])
+        .call(null, bodyId, ix, iy, iz);
+    },
+    applyTorque(bodyId, tx, ty, tz) {
+      wrap('td_physics_apply_torque', null, ['number','number','number','number'])
+        .call(null, bodyId, tx, ty, tz);
+    },
+
+    // ---- Material properties --------------------------------------------
+    setRestitution(bodyId, e) {
+      wrap('td_physics_set_restitution', null, ['number','number'])
+        .call(null, bodyId, e);
+    },
+    setFriction(bodyId, f) {
+      wrap('td_physics_set_friction', null, ['number','number'])
+        .call(null, bodyId, f);
+    },
+    setGravityScale(bodyId, s) {
+      wrap('td_physics_set_gravity_scale', null, ['number','number'])
+        .call(null, bodyId, s);
+    },
+    setUseGravity(bodyId, useGravity) {
+      wrap('td_physics_set_use_gravity', null, ['number','number'])
+        .call(null, bodyId, useGravity ? 1 : 0);
+    },
+
+    // ---- Constraints -----------------------------------------------------
+    addDistanceConstraint(bodyA, bodyB, targetDistance) {
+      return wrap('td_physics_add_distance_constraint', 'number',
+                  ['number','number','number'])
+        .call(null, bodyA, bodyB, targetDistance);
+    },
+    addHingeConstraint(bodyA, bodyB, axisX, axisY, axisZ) {
+      return wrap('td_physics_add_hinge_constraint', 'number',
+                  ['number','number','number','number','number'])
+        .call(null, bodyA, bodyB, axisX, axisY, axisZ);
+    },
+
+    // ---- Queries ---------------------------------------------------------
+    contactCount() {
+      return wrap('td_physics_contact_count', 'number', []).call(null);
+    },
+    // raycast(ox,oy,oz, dx,dy,dz, maxDist) -> {bodyId, point, normal} or null
+    raycast(ox, oy, oz, dx, dy, dz, maxDist) {
+      const Module = ensureModule();
+      const pPtr = Module._malloc(12);   // 3 floats for point
+      const nPtr = Module._malloc(12);   // 3 floats for normal
+      const bodyId = wrap('td_physics_raycast', 'number',
+        ['number','number','number','number','number','number','number',
+         'number','number','number','number','number','number'])
+        .call(null, ox, oy, oz, dx, dy, dz, maxDist,
+              pPtr, pPtr+4, pPtr+8, nPtr, nPtr+4, nPtr+8);
+      let result = null;
+      if (bodyId >= 0) {
+        result = {
+          bodyId,
+          point: {
+            x: Module.HEAPF32[pPtr >> 2],
+            y: Module.HEAPF32[(pPtr+4) >> 2],
+            z: Module.HEAPF32[(pPtr+8) >> 2],
+          },
+          normal: {
+            x: Module.HEAPF32[nPtr >> 2],
+            y: Module.HEAPF32[(nPtr+4) >> 2],
+            z: Module.HEAPF32[(nPtr+8) >> 2],
+          },
+        };
+      }
+      Module._free(pPtr);
+      Module._free(nPtr);
+      return result;
+    },
+  };
+
+  // -------------------------------------------------------------------------
   // Compose the TDEngine namespace
   // -------------------------------------------------------------------------
   const TDEngine = {
     // Subsystems
-    lifecycle, ecs, input, beat, script, i18n, audio, touch, gamepad, shaderGraph,
+    lifecycle, ecs, input, beat, script, i18n, audio, touch, gamepad,
+    shaderGraph, physics,
 
     // Convenience: direct access to the low-level bridge + Module
     get bridge() { return global.TDBridge; },

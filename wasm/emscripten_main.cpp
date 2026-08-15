@@ -1027,6 +1027,286 @@ const char* td_shader_graph_compile(int nodeCount)
     return glsl.c_str();
 }
 
+// =============================================================================
+// 3D Physics — C bridge for PhysicsWorld3D
+//
+// Exposes the new 3D physics engine to JS/TS.  Follows the Unified Syntax
+// Blueprint: flat C functions with `td_physics_*` prefix, called from JS
+// via Module._td_physics_* (Emscripten cwrap).
+//
+// The world is a singleton: td_physics_init() creates it, all subsequent
+// calls operate on it.  Bodies are referenced by integer ID returned from
+// td_physics_add_body().
+//
+// Design note: we DON'T expose the RigidBody3D struct directly to JS.  JS
+// code uses the typed TDEngine.physics.* wrapper (in web/td_api.js) which
+// hides the cwrap boilerplate.
+// =============================================================================
+#include "../src/physics/physics_world_3d.h"
+#include "../src/physics/constraints_3d.h"
+
+namespace td {
+static PhysicsWorld3D* g_physicsWorld3D = nullptr;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_init(float gravityX, float gravityY, float gravityZ)
+{
+    if (td::g_physicsWorld3D) {
+        delete td::g_physicsWorld3D;
+    }
+    td::g_physicsWorld3D = new td::PhysicsWorld3D();
+    td::g_physicsWorld3D->setGravity(td::Vec3(gravityX, gravityY, gravityZ));
+    td::g_physicsWorld3D->setSolverIterations(10);
+    td::g_physicsWorld3D->setPositionIterations(5);
+    td::g_physicsWorld3D->setAllowSleeping(true);
+    return td::g_physicsWorld3D ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_shutdown()
+{
+    if (td::g_physicsWorld3D) {
+        delete td::g_physicsWorld3D;
+        td::g_physicsWorld3D = nullptr;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_step(float dt)
+{
+    if (!td::g_physicsWorld3D) return;
+    td::g_physicsWorld3D->step(dt);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_add_body(float mass, float px, float py, float pz,
+                         int isStatic)
+{
+    if (!td::g_physicsWorld3D) return -1;
+    td::RigidBody3D rb;
+    rb.position = td::Vec3(px, py, pz);
+    if (isStatic) {
+        rb.isStatic = true;
+    } else {
+        rb.setMass(mass);
+    }
+    return td::g_physicsWorld3D->addBody(rb);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_sphere_collider(int bodyId, float radius,
+                                     float offX, float offY, float offZ)
+{
+    if (!td::g_physicsWorld3D) return;
+    td::g_physicsWorld3D->setSphereCollider(bodyId, radius,
+                                              td::Vec3(offX, offY, offZ));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_box_collider(int bodyId, float hx, float hy, float hz,
+                                   float offX, float offY, float offZ)
+{
+    if (!td::g_physicsWorld3D) return;
+    td::g_physicsWorld3D->setBoxCollider(bodyId, td::Vec3(hx, hy, hz),
+                                           td::Vec3(offX, offY, offZ));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_capsule_collider(int bodyId, float radius, float height,
+                                       int axis, float offX, float offY, float offZ)
+{
+    if (!td::g_physicsWorld3D) return;
+    td::g_physicsWorld3D->setCapsuleCollider(bodyId, radius, height, axis,
+                                                td::Vec3(offX, offY, offZ));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_position(int bodyId, float x, float y, float z)
+{
+    if (!td::g_physicsWorld3D) return;
+    if (bodyId < 0 || bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.position = td::Vec3(x, y, z);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_velocity(int bodyId, float vx, float vy, float vz)
+{
+    if (!td::g_physicsWorld3D) return;
+    if (bodyId < 0 || bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.linearVelocity = td::Vec3(vx, vy, vz);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_get_position(int bodyId, float* outX, float* outY, float* outZ)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) {
+        if (outX) *outX = 0;
+        if (outY) *outY = 0;
+        if (outZ) *outZ = 0;
+        return;
+    }
+    const td::Vec3& p = td::g_physicsWorld3D->getBody(bodyId).body.position;
+    if (outX) *outX = p.x;
+    if (outY) *outY = p.y;
+    if (outZ) *outZ = p.z;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_get_velocity(int bodyId, float* outX, float* outY, float* outZ)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) {
+        if (outX) *outX = 0;
+        if (outY) *outY = 0;
+        if (outZ) *outZ = 0;
+        return;
+    }
+    const td::Vec3& v = td::g_physicsWorld3D->getBody(bodyId).body.linearVelocity;
+    if (outX) *outX = v.x;
+    if (outY) *outY = v.y;
+    if (outZ) *outZ = v.z;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_get_orientation(int bodyId,
+                                  float* outX, float* outY, float* outZ, float* outW)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) {
+        if (outX) *outX = 0;
+        if (outY) *outY = 0;
+        if (outZ) *outZ = 0;
+        if (outW) *outW = 1;
+        return;
+    }
+    const td::Quat& q = td::g_physicsWorld3D->getBody(bodyId).body.orientation;
+    if (outX) *outX = q.x;
+    if (outY) *outY = q.y;
+    if (outZ) *outZ = q.z;
+    if (outW) *outW = q.w;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_apply_force(int bodyId, float fx, float fy, float fz)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.applyForce(td::Vec3(fx, fy, fz));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_apply_impulse(int bodyId, float ix, float iy, float iz)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.applyImpulse(td::Vec3(ix, iy, iz));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_apply_torque(int bodyId, float tx, float ty, float tz)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.applyTorque(td::Vec3(tx, ty, tz));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_restitution(int bodyId, float e)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.restitution = e;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_friction(int bodyId, float f)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.friction = f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_gravity_scale(int bodyId, float s)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.gravityScale = s;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void td_physics_set_use_gravity(int bodyId, int useGravity)
+{
+    if (!td::g_physicsWorld3D || bodyId < 0 ||
+        bodyId >= td::g_physicsWorld3D->bodyCount()) return;
+    td::g_physicsWorld3D->getBody(bodyId).body.useGravity = (useGravity != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_add_distance_constraint(int bodyA, int bodyB,
+                                        float targetDistance)
+{
+    if (!td::g_physicsWorld3D) return -1;
+    td::Constraint3D c;
+    c.type = td::ConstraintType3D::Distance;
+    c.bodyA = bodyA;
+    c.bodyB = bodyB;
+    c.targetDistance = targetDistance;
+    return td::g_physicsWorld3D->addConstraint(c);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_add_hinge_constraint(int bodyA, int bodyB,
+                                      float ax, float ay, float az)
+{
+    if (!td::g_physicsWorld3D) return -1;
+    td::Constraint3D c;
+    c.type = td::ConstraintType3D::Hinge;
+    c.bodyA = bodyA;
+    c.bodyB = bodyB;
+    c.hingeAxisA = td::Vec3(ax, ay, az);
+    c.hingeAxisB = td::Vec3(ax, ay, az);
+    return td::g_physicsWorld3D->addConstraint(c);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_raycast(float ox, float oy, float oz,
+                        float dx, float dy, float dz, float maxDist,
+                        float* outPx, float* outPy, float* outPz,
+                        float* outNx, float* outNy, float* outNz)
+{
+    if (!td::g_physicsWorld3D) return -1;
+    td::Vec3 hitPoint, hitNormal;
+    int32_t hitBody;
+    bool hit = td::g_physicsWorld3D->raycast(
+        td::Vec3(ox, oy, oz), td::Vec3(dx, dy, dz), maxDist,
+        hitPoint, hitNormal, hitBody);
+    if (!hit) return -1;
+    if (outPx) *outPx = hitPoint.x;
+    if (outPy) *outPy = hitPoint.y;
+    if (outPz) *outPz = hitPoint.z;
+    if (outNx) *outNx = hitNormal.x;
+    if (outNy) *outNy = hitNormal.y;
+    if (outNz) *outNz = hitNormal.z;
+    return hitBody;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_contact_count()
+{
+    if (!td::g_physicsWorld3D) return 0;
+    return (int)td::g_physicsWorld3D->getContacts().size();
+}
+
+EMSCRIPTEN_KEEPALIVE
+int td_physics_body_count()
+{
+    if (!td::g_physicsWorld3D) return 0;
+    return td::g_physicsWorld3D->bodyCount();
+}
+
 } // extern "C"
 
 // =============================================================================

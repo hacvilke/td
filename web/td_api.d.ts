@@ -373,6 +373,182 @@ export interface TDEngineLowLevel {
 }
 
 // ---------------------------------------------------------------------------
+// 3D Physics (PhysicsWorld3D)
+//
+// Full 3D rigid body physics: spheres, boxes, capsules, convex hulls.
+// Sequential impulse solver with Coulomb friction, restitution, sleeping,
+// and constraints (distance, point, hinge).  Backed by src/physics/
+// physics_world_3d.{h,cpp}, exposed via the td_physics_* C bridge.
+//
+// Usage:
+//   TDEngine.physics.init(0, -9.81, 0);
+//   const floor = TDEngine.physics.addBody(0, 0, -5, 0, true);
+//   TDEngine.physics.setBoxCollider(floor, 10, 1, 10);
+//   const ball = TDEngine.physics.addBody(1, 0, 5, 0, false);
+//   TDEngine.physics.setSphereCollider(ball, 0.5);
+//   TDEngine.physics.setRestitution(ball, 0.8);
+//   TDEngine.physics.step(1 / 60);
+//   const pos = TDEngine.physics.getPosition(ball);
+// ---------------------------------------------------------------------------
+
+/** 3-component vector (matches Vec3 layout in C++). */
+export interface TDVec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Quaternion (matches Quat layout in C++ — x, y, z, w where w is scalar). */
+export interface TDQuat {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}
+
+/** Result of a raycast query against the physics world. */
+export interface TDRaycastHit {
+  /** Body index that was hit, or -1 if no hit. */
+  bodyId: number;
+  /** World-space contact point. */
+  point: TDVec3;
+  /** World-space surface normal at the contact point. */
+  normal: TDVec3;
+}
+
+export interface TDPhysics {
+  /**
+   * Initialize the physics world with a gravity vector. Replaces any
+   * existing world.  Typical gravity: (0, -9.81, 0).
+   * Returns 1 on success.
+   */
+  init(gravityX: number, gravityY: number, gravityZ: number): number;
+
+  /** Destroy the physics world and free all bodies + constraints. */
+  shutdown(): void;
+
+  /**
+   * Advance the simulation by `dt` seconds.  Recommended dt = 1/60.
+   * Uses semi-implicit Euler + sequential impulse solver (8-15 iterations).
+   */
+  step(dt: number): void;
+
+  /**
+   * Add a rigid body to the world.
+   * @param mass   Body mass in kg.  Use 0 for static bodies (set isStatic=true).
+   * @param x,y,z  Initial world-space position.
+   * @param isStatic  If true, body never moves (walls, floors, terrain).
+   * @returns Body index (use as handle for all subsequent calls).
+   */
+  addBody(mass: number, x: number, y: number, z: number, isStatic: boolean): number;
+
+  /** Total number of bodies in the world (static + dynamic). */
+  bodyCount(): number;
+
+  // ---- Colliders ----------------------------------------------------------
+
+  /**
+   * Attach a sphere collider to a body.  Replaces any existing collider.
+   * @param bodyId  Body index returned from addBody().
+   * @param radius  Sphere radius in meters.
+   * @param offX,Y,Z  Local-space offset from body's center (default 0,0,0).
+   */
+  setSphereCollider(bodyId: number, radius: number,
+                    offX?: number, offY?: number, offZ?: number): void;
+
+  /**
+   * Attach an axis-aligned box collider to a body.
+   * @param hx,hy,hz  Half-extents along each axis (full width = 2*hx).
+   * @param offX,Y,Z  Local-space offset from body's center.
+   */
+  setBoxCollider(bodyId: number, hx: number, hy: number, hz: number,
+                 offX?: number, offY?: number, offZ?: number): void;
+
+  /**
+   * Attach a capsule collider to a body.  Great for character controllers.
+   * @param radius  Capsule radius.
+   * @param height  Total height (cylinder + 2 hemispheres).
+   * @param axis    Long axis: 0=X, 1=Y (default), 2=Z.
+   */
+  setCapsuleCollider(bodyId: number, radius: number, height: number,
+                     axis?: number,
+                     offX?: number, offY?: number, offZ?: number): void;
+
+  // ---- Body state ---------------------------------------------------------
+
+  /** Teleport a body to a new position (does not affect velocity). */
+  setPosition(bodyId: number, x: number, y: number, z: number): void;
+
+  /** Set the body's linear velocity directly (m/s). */
+  setVelocity(bodyId: number, vx: number, vy: number, vz: number): void;
+
+  /** Get the body's current world-space position. */
+  getPosition(bodyId: number): TDVec3;
+
+  /** Get the body's current linear velocity (m/s). */
+  getVelocity(bodyId: number): TDVec3;
+
+  /** Get the body's current orientation as a quaternion (x, y, z, w). */
+  getOrientation(bodyId: number): TDQuat;
+
+  // ---- Forces / impulses --------------------------------------------------
+
+  /** Apply a continuous force (in Newtons) — accumulated this frame. */
+  applyForce(bodyId: number, fx: number, fy: number, fz: number): void;
+
+  /** Apply an instantaneous impulse (changes velocity immediately by J/m). */
+  applyImpulse(bodyId: number, ix: number, iy: number, iz: number): void;
+
+  /** Apply a continuous torque (accumulated this frame). */
+  applyTorque(bodyId: number, tx: number, ty: number, tz: number): void;
+
+  // ---- Material properties ------------------------------------------------
+
+  /** Set coefficient of restitution (bounciness). 0 = no bounce, 1 = elastic. */
+  setRestitution(bodyId: number, e: number): void;
+
+  /** Set Coulomb friction coefficient (typically 0.0 to 1.0). */
+  setFriction(bodyId: number, f: number): void;
+
+  /** Scale gravity for this body (1.0 = full gravity, 0.0 = no gravity). */
+  setGravityScale(bodyId: number, s: number): void;
+
+  /** Enable/disable gravity for this body. */
+  setUseGravity(bodyId: number, useGravity: boolean): void;
+
+  // ---- Constraints --------------------------------------------------------
+
+  /**
+   * Add a distance constraint between two bodies (like a rope or rigid rod).
+   * Maintains the distance between the bodies' centers at `targetDistance`.
+   * @returns Constraint index.
+   */
+  addDistanceConstraint(bodyA: number, bodyB: number,
+                        targetDistance: number): number;
+
+  /**
+   * Add a hinge constraint between two bodies.  Anchors them at the same
+   * point but allows free rotation around the given axis (e.g., door hinge).
+   * @returns Constraint index.
+   */
+  addHingeConstraint(bodyA: number, bodyB: number,
+                     axisX: number, axisY: number, axisZ: number): number;
+
+  // ---- Queries ------------------------------------------------------------
+
+  /** Number of active contact manifolds (for gameplay collision events). */
+  contactCount(): number;
+
+  /**
+   * Cast a ray against all colliders in the world.
+   * @returns The closest hit, or null if nothing was hit within maxDist.
+   */
+  raycast(ox: number, oy: number, oz: number,
+          dx: number, dy: number, dz: number,
+          maxDist: number): TDRaycastHit | null;
+}
+
+// ---------------------------------------------------------------------------
 // Composed namespace
 // ---------------------------------------------------------------------------
 
@@ -388,6 +564,7 @@ export interface TDEngineNamespace extends TDEngineLowLevel {
   touch: TDTouch;
   gamepad: TDGamepad;
   shaderGraph: TDShaderGraph;
+  physics: TDPhysics;
 
   // Convenience accessors
   /** The low-level TDBridge object (engine internals). Prefer the subsystems above. */
