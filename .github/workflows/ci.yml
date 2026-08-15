@@ -114,6 +114,18 @@ jobs:
             web/deprecated_tracker.js
           if-no-files-found: error
 
+      # Assemble the Pages deploy directory: web/* at the root, plus the
+      # 3D showcase demo at examples/3d-showcase/ (the showcase loads
+      # engine scripts via ../../web/ relative paths).
+      - name: Assemble Pages deploy directory
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p _pages/examples
+          cp -r web/* _pages/
+          cp -r examples/3d-showcase _pages/examples/3d-showcase
+          echo "=== _pages contents ==="
+          find _pages -maxdepth 3 -type f | sort
+
       # Upload a SINGLE Pages artifact — this is what actions/deploy-pages
       # pushes to the GitHub Pages CDN. MUST be named 'github-pages'.
       - name: Upload Pages artifact
@@ -121,7 +133,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           name: github-pages
-          path: web
+          path: _pages
 
   # Separate deploy job — required by actions/deploy-pages.
   # It must run in the 'github-pages' environment so GitHub trusts it
