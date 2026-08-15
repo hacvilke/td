@@ -10,6 +10,7 @@
 //   serve  [path] [--port N]   Start dev server with live reload
 //   build  [path]              Build WASM + bundle web assets
 //   test   [pattern]           Run tests (JS + C++)
+//   script <subcmd> [args]     Compile / check / run TDScript (.td) files
 //   bundle -path DIR -config FILE   Build a Windows installer (.exe) via Inno Setup
 //   deploy -path DIR -config FILE   Ship a built game to gh-pages / gh-release / static / zip
 //   version, --version, -v     Print engine version
@@ -101,9 +102,10 @@ Usage:
 
 Commands:
   init   [name]                    Scaffold a new game folder
-  serve  [path] [--port N]         Start dev server with live reload
+  serve  [path] [--port N]         Start dev server with live reload + game-net server
   build  [path]                    Build WASM + bundle web assets
   test   [pattern]                 Run tests (JS + C++)
+  script <compile|check|run>       Compile / check / run TDScript (.td) files
   bundle -path DIR -config FILE    Build a Windows installer via Inno Setup
   deploy -path DIR -config FILE    Ship a built game (gh-pages/gh-release/static/zip)
   version                          Print engine version
@@ -121,6 +123,8 @@ Examples:
   td serve my-game --port 8080
   td build my-game
   td test
+  td script compile src/server/server_main.td -o build/server_main.js
+  td script run src/server/server_main.td --main ServerMain
   td bundle -path ./my-game -config bundle.json
   td deploy -path ./dist -config deploy.json --target gh-pages
   td deploy -path . -config bundle.json --target gh-release --artifact Setup.exe

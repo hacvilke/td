@@ -68,6 +68,10 @@ async function run(args, opts) {
     s.replace(/__GAME_NAME__/g, name)
      .replace(/__GAME_ID__/g, slugify(name))
   );
+  patchFile(path.join(target, 'project.td'), (s) =>
+    s.replace(/__GAME_NAME__/g, name)
+     .replace(/__GAME_ID__/g, slugify(name))
+  );
   patchFile(path.join(target, 'index.html'), (s) =>
     s.replace(/__GAME_NAME__/g, name)
   );

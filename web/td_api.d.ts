@@ -416,11 +416,102 @@ declare global {
     TDBridge: any;
     TDDeprecated: any;
     TDServerRouter: any;
+    TDScriptRuntime: TDScriptRuntimeNamespace;
+    TDClientBootstrap: { bootstrap: () => Promise<WebSocket | null> };
   }
   // eslint-disable-next-line no-var
   var TDEngine: TDEngineNamespace;
   // eslint-disable-next-line no-var
   var TDBridge: any;
+  // eslint-disable-next-line no-var
+  var TDScriptRuntime: TDScriptRuntimeNamespace;
+  // eslint-disable-next-line no-var
+  var TDClientBootstrap: { bootstrap: () => Promise<WebSocket | null> };
+}
+
+// =============================================================================
+// TDScript Runtime — type definitions for the network-scripting runtime.
+//
+// Compiled TDScript code (.td → .js) runs against this runtime. Provides:
+//   - Log, Network, Physics, Vector3, Math globals
+//   - __td_rpc_register / __td_repl_register / __td_script_main hooks
+//
+// See: web/tdscript_runtime.js, src/scripting/tdscript/
+// =============================================================================
+
+interface TDScriptVector3 {
+  x: number;
+  y: number;
+  z: number;
+  add(o: TDScriptVector3): TDScriptVector3;
+  sub(o: TDScriptVector3): TDScriptVector3;
+  mul(s: number): TDScriptVector3;
+  length(): number;
+  normalized(): TDScriptVector3;
+  toString(): string;
+}
+
+type TDScriptVector3Constructor = new (x?: number, y?: number, z?: number) => TDScriptVector3;
+
+interface TDScriptLog {
+  info(msg: string): void;
+  warn(msg: string): void;
+  error(msg: string): void;
+}
+
+interface TDScriptNetwork {
+  /** Broadcast a notification string to all connected clients. */
+  broadcastNotification(msg: string): void;
+  /** Send a notification to one specific client by peerId. */
+  sendToClient(peerId: number, msg: string): void;
+  /** Push a replicated field update to all clients (server → clients). */
+  broadcastState(field: string, value: any): void;
+  /** Client → server RPC invocation. */
+  callRpc(peerId: number, cls: string, method: string, args: any[], mode: 'reliable' | 'unreliable'): void;
+  /** Dispatch an incoming RPC frame on the server side. */
+  dispatchRpc(frame: any, peerId: number): boolean;
+  /** Apply a replicated state update on the client side. */
+  applyReplicated(frame: any): boolean;
+  /** Last frame sent (for unit-test inspection when no transport is connected). */
+  lastFrame?: any;
+}
+
+interface TDScriptPhysics {
+  /** Returns true if the given position is inside a solid voxel. */
+  checkVoxelCollision(pos: TDScriptVector3): boolean;
+}
+
+interface TDScriptRuntimeNamespace {
+  Vector3: TDScriptVector3Constructor;
+  Log: TDScriptLog;
+  Physics: TDScriptPhysics;
+  Network: TDScriptNetwork;
+  Math: typeof Math;
+  rpcTable: Map<string, { mode: 'reliable' | 'unreliable'; fn: (instance: any, args: any[]) => any }>;
+  replTable: Map<string, string[]>;
+  instances: Map<string, any>;
+  __td_rpc_register(cls: string, method: string, mode: 'reliable' | 'unreliable', fn: (instance: any, args: any[]) => any): void;
+  __td_repl_register(cls: string, fields: string[]): void;
+  __td_script_main(className: string): any | null;
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var Vector3: TDScriptVector3Constructor;
+  // eslint-disable-next-line no-var
+  var Log: TDScriptLog;
+  // eslint-disable-next-line no-var
+  var Physics: TDScriptPhysics;
+  // eslint-disable-next-line no-var
+  var Network: TDScriptNetwork;
+  // eslint-disable-next-line no-var
+  var __td_rpc_register: TDScriptRuntimeNamespace['__td_rpc_register'];
+  // eslint-disable-next-line no-var
+  var __td_repl_register: TDScriptRuntimeNamespace['__td_repl_register'];
+  // eslint-disable-next-line no-var
+  var __td_script_main: TDScriptRuntimeNamespace['__td_script_main'];
+  // eslint-disable-next-line no-var
+  var __td_net_send: (frame: any, opts: { broadcast?: boolean; peerId?: number }) => void;
 }
 
 export {};

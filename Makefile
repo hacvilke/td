@@ -196,6 +196,13 @@ NET_TEST_SRC := \
 	$(SRC_DIR)/net/server_authoritative.cpp \
 	$(SRC_DIR)/net/json_rpc.cpp
 
+# Sources for the TDScript compiler test (lexer + parser + codegen).
+TDSCRIPT_TEST_SRC := \
+	$(SRC_DIR)/scripting/tdscript/lexer.cpp \
+	$(SRC_DIR)/scripting/tdscript/parser.cpp \
+	$(SRC_DIR)/scripting/tdscript/codegen_js.cpp \
+	$(SRC_DIR)/scripting/tdscript/tdscript.cpp
+
 # Per-test compile recipe. -DTEST_STUB_LOGGER lets the test build without
 # the real Logger (which #includes <windows.h> on desktop).
 $(TEST_BIN_DIR)/test_net_json_rpc: tests/test_net_json_rpc.cpp $(NET_TEST_SRC) tests/stub_logger.cpp
@@ -210,15 +217,22 @@ $(TEST_BIN_DIR)/test_net: tests/test_net.cpp $(NET_TEST_SRC) tests/stub_logger.c
 	        tests/test_net.cpp $(NET_TEST_SRC) tests/stub_logger.cpp \
 	        -lpthread -o $@
 
+$(TEST_BIN_DIR)/test_tdscript_compiler: tests/test_tdscript_compiler.cpp $(TDSCRIPT_TEST_SRC)
+	@mkdir -p $(TEST_BIN_DIR)
+	$(CXX) -std=c++17 -Wall -Wextra -O2 -I$(SRC_DIR) \
+	        tests/test_tdscript_compiler.cpp $(TDSCRIPT_TEST_SRC) \
+	        -lpthread -o $@
+
 # Run all C++ tests. Exits non-zero if any test fails.
-test: $(TEST_BIN_DIR)/test_net $(TEST_BIN_DIR)/test_net_json_rpc
+test: $(TEST_BIN_DIR)/test_net $(TEST_BIN_DIR)/test_net_json_rpc $(TEST_BIN_DIR)/test_tdscript_compiler
 	@echo "Running C++ tests..."
 	@$(TEST_BIN_DIR)/test_net; r1=$$?; \
 	 $(TEST_BIN_DIR)/test_net_json_rpc; r2=$$?; \
-	 if [ $$r1 -eq 0 ] && [ $$r2 -eq 0 ]; then \
+	 $(TEST_BIN_DIR)/test_tdscript_compiler; r3=$$?; \
+	 if [ $$r1 -eq 0 ] && [ $$r2 -eq 0 ] && [ $$r3 -eq 0 ]; then \
 	   echo "All C++ tests passed."; \
 	 else \
-	   echo "Some C++ tests failed (net=$$r1, json_rpc=$$r2)."; \
+	   echo "Some C++ tests failed (net=$$r1, json_rpc=$$r2, tdscript=$$r3)."; \
 	   exit 1; \
 	 fi
 

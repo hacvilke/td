@@ -1,9 +1,10 @@
 // =============================================================================
-// TD Engine - WebGPU Renderer Path (Tier 4)
+// TD Engine - WebGPU Renderer Path (Tier 4 — Core Architectural Requirement)
 //
 // WebGPU is the modern browser graphics API (successor to WebGL2). It offers:
 //   - Lower overhead (explicit command encoding, no implicit state).
-//   - Compute shaders (post-processing, particle systems, GPU culling).
+//   - Compute shaders (post-processing, particle systems, GPU culling,
+//     procedural terrain generation, greedy voxel meshing on GPU).
 //   - Better multithreading (Dawn / wgpu-native support worker threads).
 //   - Bind groups (replaces uniform arrays, more flexible).
 //
@@ -11,12 +12,31 @@
 // alongside the existing WebGL2 renderer. The engine picks the best
 // available backend at startup (WebGPU if available, else WebGL2).
 //
+// Why WebGPU is now a CORE requirement (not "defer"):
+//   The engine's long-term goal is Minecraft-scale / AAA-quality browser
+//   games. WebGL2 maxes out at ~100K draw calls/frame and has no compute
+//   shaders. WebGPU's compute pipeline is required for:
+//     - GPU-side greedy voxel meshing (millions of voxels at 60 FPS)
+//     - 4-octave simplex terrain generation on the GPU
+//     - Frustum culling via compute shader
+//     - Post-processing (bloom, SSAO, motion blur)
+//
+// Enable with: emcmake cmake -B build-web -DTD_BUILD_WEB=ON -DTD_BUILD_WEBGPU=ON
+//
 // Status: SCAFFOLDING. The interface is defined; the actual WebGPU calls
 // are stubbed out (return false / no-op). Real WebGPU integration would
 // require either Dawn (C++) or wgpu-native (Rust/C) — both external deps,
 // which violates the "zero external libraries" principle. Instead, on
 // WASM, the browser's `navigator.gpu` is accessed via Emscripten's
 // emscripten_webgpu_* API (which is just JS interop, no external dep).
+//
+// Roadmap to real WebGPU:
+//   1. Implement init() to call emscripten_webgpu_get_device() when
+//      TD_BUILD_WEBGPU is on. (Currently returns WebGL2 fallback.)
+//   2. Implement createBuffer / createPipeline via the WGPU C API.
+//   3. Implement beginFrame / endFrame via command encoding.
+//   4. Implement compute shader dispatch (kComputeParticleWGSL is ready).
+//   5. Add a "WebGPU vs WebGL2" benchmark in tests/bench_render.js.
 // =============================================================================
 #pragma once
 #include "../core/logger.h"

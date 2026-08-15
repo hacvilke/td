@@ -102,6 +102,10 @@ set(ENGINE_PORTABLE_SOURCES
     src/ecs/entity.cpp
     src/ecs/beat_system.cpp
     src/scripting/script_vm.cpp
+    src/scripting/tdscript/lexer.cpp
+    src/scripting/tdscript/parser.cpp
+    src/scripting/tdscript/codegen_js.cpp
+    src/scripting/tdscript/tdscript.cpp
     src/ui/ui.cpp
     src/voxel/voxel.cpp
     src/net/transport.cpp
@@ -142,6 +146,27 @@ if(TD_BUILD_WEB)
         set(CMAKE_CXX_COMPILER em++)
     endif()
 
+    # -------------------------------------------------------------------------
+    # Tier 2: Wasm Memory64 + Wasm Threads (future AAA-scale architecture)
+    #
+    # The engine targets Minecraft-scale / AAA-quality browser games. To do
+    # that it needs to break the 4GB Wasm memory cap (Memory64) and run
+    # background work (chunk streaming, asset decoding) off the main render
+    # loop (pthreads / SharedArrayBuffer).
+    #
+    # These flags are OFF by default because:
+    #   - Memory64 requires Emscripten 3.1.55+ and a browser with
+    #     `javascript.memory64` enabled (Chrome 117+, Firefox 121+).
+    #     Many users today still get 32-bit Wasm.
+    #   - pthreads requires COOP+COEP headers on the host. `td serve`
+    #     adds them automatically when --threads is passed (TODO).
+    #
+    # Enable with: `emcmake cmake -B build-web -DTD_BUILD_WEB=ON -DTD_WASM_MEMORY64=ON -DTD_WASM_THREADS=ON`
+    # -------------------------------------------------------------------------
+    option(TD_WASM_MEMORY64 "Enable Wasm Memory64 (4GB+ heap) — requires Emscripten 3.1.55+ and a Memory64-capable browser" OFF)
+    option(TD_WASM_THREADS  "Enable Wasm pthreads (background chunk loading) — requires COOP+COEP headers" OFF)
+    option(TD_BUILD_WEBGPU  "Enable WebGPU backend (compute shaders, modern API) — requires USE_WEBGPU=1" OFF)
+
     # The platform layer is replaced by the Emscripten main. We do NOT compile
     # win32_window.cpp / win32_input.cpp / audio_engine.cpp (waveOut) /
     # socket.cpp (Winsock) - the browser provides those via the JS bridge.
@@ -159,22 +184,42 @@ if(TD_BUILD_WEB)
     )
 
     # Emscripten compile + link flags. Must match the Makefile's EMCCFLAGS.
-    target_compile_options(td-engine PRIVATE
+    set(EMCC_FLAGS
         -s WASM=1
         -s USE_WEBGL2=1
         -s ALLOW_MEMORY_GROWTH=1
         -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1
     )
 
+    if(TD_WASM_MEMORY64)
+        list(APPEND EMCC_FLAGS -s MEMORY64=1)
+        message(STATUS " Tier 2: Wasm Memory64 enabled (heap > 4GB)")
+        # Memory64 requires INITIAL_MEMORY to be at least 2^32 (one page is 64KiB).
+        # Emscripten handles this automatically; just ensure growth is allowed.
+    endif()
+
+    if(TD_WASM_THREADS)
+        list(APPEND EMCC_FLAGS -s USE_PTHREADS=1 -s PROXY_TO_PTHREAD=0)
+        message(STATUS " Tier 2: Wasm pthreads enabled (background workers)")
+        # NOTE: When threads are on, the host MUST serve with:
+        #   Cross-Origin-Opener-Policy: same-origin
+        #   Cross-Origin-Embedder-Policy: require-corp
+        # `td serve` adds these automatically (TODO: implement --threads flag).
+    endif()
+
+    if(TD_BUILD_WEBGPU)
+        list(APPEND EMCC_FLAGS -s USE_WEBGPU=1)
+        message(STATUS " Tier 4: WebGPU backend enabled (compute shaders)")
+    endif()
+
+    target_compile_options(td-engine PRIVATE ${EMCC_FLAGS})
+
     target_link_options(td-engine PRIVATE
-        -s WASM=1
-        -s USE_WEBGL2=1
-        -s ALLOW_MEMORY_GROWTH=1
+        ${EMCC_FLAGS}
         -s NO_EXIT_RUNTIME=1
-        -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1
-        -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP16","HEAPU8","getValue","setValue","addFunction"]'
         -s ALLOW_TABLE_GROWTH=1
-        -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks","_td_beat_start","_td_beat_stop","_td_beat_is_on_beat","_td_beat_get_count","_td_beat_get_next_beat_time","_td_beat_get_last_beat_time","_td_beat_register_hit","_td_beat_get_combo","_td_beat_get_best_combo","_td_beat_reset_combo","_td_beat_set_callback","_td_beat_play_sound","_td_beat_set_bpm","_td_script_load","_td_script_call","_td_script_unload","_td_i18n_load","_td_i18n_set_locale","_td_i18n_t","_td_i18n_is_rtl","_td_touch_begin_frame","_td_touch_start","_td_touch_move","_td_touch_end","_td_touch_count","_td_touch_x","_td_touch_y","_td_touch_pinch_scale","_td_gamepad_begin_frame","_td_gamepad_set_connected","_td_gamepad_set_button","_td_gamepad_set_analog","_td_gamepad_set_axis","_td_gamepad_button_pressed","_td_gamepad_axis","_td_shader_graph_compile"]'
+        -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP16","HEAPU8","getValue","setValue","addFunction"]'
+        -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks","_td_beat_start","_td_beat_stop","_td_beat_is_on_beat","_td_beat_get_count","_td_beat_get_next_beat_time","_td_beat_get_last_beat_time","_td_beat_register_hit","_td_beat_get_combo","_td_beat_get_best_combo","_td_beat_reset_combo","_td_beat_set_callback","_td_beat_play_sound","_td_beat_set_bpm","_td_script_load","_td_script_call","_td_script_unload","_td_i18n_load","_td_i18n_set_locale","_td_i18n_t","_td_i18n_is_rtl","_td_touch_begin_frame","_td_touch_start","_td_touch_move","_td_touch_end","_td_touch_count","_td_touch_x","_td_touch_y","_td_touch_pinch_scale","_td_gamepad_begin_frame","_td_gamepad_set_connected","_td_gamepad_set_button","_td_gamepad_set_analog","_td_gamepad_set_axis","_td_gamepad_button_pressed","_td_gamepad_axis","_td_shader_graph_compile","_tdscript_compile"]'
         -s ASYNCIFY=0
         -s EXIT_RUNTIME=0
     )
@@ -190,6 +235,15 @@ if(TD_BUILD_WEB)
     message(STATUS " Output: web/td-engine.js + web/td-engine.wasm")
     message(STATUS " Platform layer: wasm/emscripten_main.cpp")
     message(STATUS " Excluded (desktop-only): win32_window, win32_input, audio_engine, socket")
+    if(NOT TD_WASM_MEMORY64)
+        message(STATUS " Tier 2: Memory64 OFF (default). Enable with -DTD_WASM_MEMORY64=ON for >4GB worlds.")
+    endif()
+    if(NOT TD_WASM_THREADS)
+        message(STATUS " Tier 2: pthreads OFF (default). Enable with -DTD_WASM_THREADS=ON for background workers.")
+    endif()
+    if(NOT TD_BUILD_WEBGPU)
+        message(STATUS " Tier 4: WebGPU OFF (default). Enable with -DTD_BUILD_WEBGPU=ON for compute shaders.")
+    endif()
     message(STATUS "")
 
 # =============================================================================

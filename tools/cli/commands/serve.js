@@ -1,50 +1,65 @@
 'use strict';
 
-// td serve [path] [--port N]
+// td serve [path] [--port N] [--no-net]
 //
-// Starts a tiny static file server for the game folder, with:
-//   - Live reload: watches the game folder + the engine's web/ dir; on any
-//     change, sends a `reload` event to all connected browsers via WebSocket.
-//   - /engine/* routes map to the engine's web/ directory (so the game's
-//     index.html can <script src="/engine/td_api.js"></script> without
-//     copying the engine files into every game folder).
-//   - Default port 8080.
+// Starts a dev server for the game folder, with:
+//   - Static file server (HTML/JS/WASM) on the main port (default 8080)
+//   - Live reload via WebSocket at /__reload
+//   - /engine/* routes map to the engine's web/ directory
+//   - Game-net WebSocket server on a SECOND port (default 8081) — this is the
+//     "default test server" that the engine routes test games to for
+//     multiplayer testing. It loads the project.td's serverScript (a .td
+//     file), compiles it via TDScript, and runs it against the TDScript
+//     runtime. Clients connect via the URL in project.td's networking config.
 //
-// The server is intentionally minimal: no SSR, no transpilation, no HMR of
-// JS modules. Just files + a reload ping. Keeps the dev loop fast.
+// If --no-net is passed, only the static server boots (no game-net server).
+// If project.td is missing or has no entry.serverScript, the game-net server
+// is skipped with a warning.
 
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const url = require('url');
-const { WebSocketServer } = require('ws'); // lazily required below
+const vm = require('vm');
 
 const {
   findEngineRoot, ok, info, warn, err,
   isFile, isDir, resolvePath, COLORS,
 } = require('../lib/util');
+const { loadProjectTds, resolveServerScript, parseServerUrl } = require('../lib/project_tds');
+const { compile } = require('../../tdscript/tdscript.js');
 
 function help() {
   console.log(`
-td serve [path] [--port N]
+td serve [path] [--port N] [--no-net]
 
-Starts a dev server for a TD game folder.
+Starts a dev server for a TD game folder, with a game-net server for multiplayer testing.
 
 Arguments:
   path              Game folder (default: current directory)
 
 Options:
-  --port N          Port to listen on (default: 8080)
+  --port N          Static server port (default: 8080)
+  --net-port N      Game-net WebSocket server port (default: from project.td or 8081)
   --no-reload       Disable live reload
+  --no-net          Skip booting the game-net server (static files only)
   --open            Open the browser automatically
 
 Routes:
   /                 Serves files from the game folder
   /engine/*         Serves files from the engine's web/ directory
+  /project.td       Serves the project.td config (so the client can read it)
+
+Game-net server:
+  Reads project.td's networking.defaultServer URL to determine its port.
+  Loads project.td's entry.serverScript (.td file), compiles it via TDScript,
+  and runs it against tdscript_runtime.js. Clients connect via WebSocket
+  and exchange JSON-RPC frames (same wire format as net_websocket.js).
 
 Examples:
   td serve .
   td serve my-game --port 3000 --open
+  td serve my-game --no-net  # static only
 `);
 }
 
@@ -122,6 +137,20 @@ async function run(args, opts) {
     const parsed = url.parse(req.url);
     let p = decodeURIComponent(parsed.pathname);
 
+    // /project.td — serve the project config so the client can read it
+    if (p === '/project.td') {
+      const projPath = path.join(gameDir, 'project.td');
+      if (!fs.existsSync(projPath)) {
+        res.statusCode = 404;
+        res.end('Not found: project.td');
+        return;
+      }
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      fs.createReadStream(projPath).pipe(res);
+      return;
+    }
+
     // Engine files: /engine/foo.js -> web/foo.js
     let filePath;
     if (p.startsWith('/engine/')) {
@@ -162,6 +191,124 @@ async function run(args, opts) {
     res.setHeader('Content-Type', mime);
     fs.createReadStream(filePath).pipe(res);
   });
+
+  // --- Game-net server setup (default test server) ---
+  const useNet = opts.net !== false;
+  let netPort = null;
+  let netServer = null;
+  let netWss = null;
+  let netRuntime = null;
+  let netClients = new Map();  // ws → peerId
+  let netPeerIdCounter = 0;
+  let netMainInstance = null;
+
+  if (useNet) {
+    // Load project.td
+    const proj = loadProjectTds(gameDir);
+    if (!proj.ok) {
+      warn(`Game-net server skipped: ${proj.error}`);
+    } else {
+      const cfg = proj.config;
+      const serverUrl = parseServerUrl(cfg.networking.defaultServer);
+      if (!serverUrl) {
+        warn(`Invalid networking.defaultServer URL: ${cfg.networking.defaultServer}`);
+      } else {
+        netPort = opts['net-port'] ? parseInt(opts['net-port'], 10) : serverUrl.port;
+        const serverScriptPath = resolveServerScript(gameDir, cfg);
+        if (!serverScriptPath || !fs.existsSync(serverScriptPath)) {
+          warn(`Server script not found: ${serverScriptPath || '(none in project.td)'}`);
+        } else {
+          // Compile the .td script
+          const tdSrc = fs.readFileSync(serverScriptPath, 'utf-8');
+          const compileResult = compile(tdSrc, 'js');
+          if (!compileResult.ok) {
+            err(`TDScript compilation failed:`);
+            console.error(compileResult.error);
+            process.exit(1);
+          }
+
+          // Load the TDScript runtime + compiled script into a sandbox
+          const runtimePath = path.join(engineRoot, 'web', 'tdscript_runtime.js');
+          const runtimeSrc = fs.readFileSync(runtimePath, 'utf-8');
+          netRuntime = { console, process, require, setTimeout };
+          netRuntime.global = netRuntime;
+          netRuntime.window = netRuntime;
+          vm.createContext(netRuntime);
+          try {
+            vm.runInContext(runtimeSrc, netRuntime, { filename: 'tdscript_runtime.js' });
+            vm.runInContext(compileResult.code, netRuntime, { filename: path.basename(serverScriptPath) + '.js' });
+            const mainClass = cfg.entry.mainClass || 'ServerMain';
+            netMainInstance = netRuntime.__td_script_main(mainClass);
+            if (!netMainInstance) {
+              err(`Failed to instantiate main server class: ${mainClass}`);
+              process.exit(1);
+            }
+            // Wire the runtime's Network.sendFrame to broadcast via netWss
+            netRuntime.__td_net_send = function (frame, opts2) {
+              if (!netWss) return;
+              const json = JSON.stringify(frame);
+              if (opts2 && opts2.broadcast) {
+                for (const ws of netClients.keys()) {
+                  if (ws.readyState === 1) ws.send(json);
+                }
+              } else if (opts2 && opts2.peerId) {
+                for (const [ws, pid] of netClients.entries()) {
+                  if (pid === opts2.peerId && ws.readyState === 1) { ws.send(json); break; }
+                }
+              }
+            };
+            ok(`Game-net server: loaded ${cfg.entry.mainClass} from ${path.relative(gameDir, serverScriptPath)}`);
+          } catch (e) {
+            err(`Failed to run TDScript: ${e.message}`);
+            console.error(e.stack);
+            process.exit(1);
+          }
+
+          // Boot the WebSocket server for game traffic
+          try {
+            const { WebSocketServer } = require('ws');
+            netWss = new WebSocketServer({ noServer: true });
+            netServer = http.createServer((req, res) => {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'text/plain');
+              res.end('TD Engine game-net server. Connect via WebSocket.\n');
+            });
+            netServer.on('upgrade', (req, socket, head) => {
+              const parsed = url.parse(req.url);
+              if (parsed.pathname === serverUrl.path) {
+                netWss.handleUpgrade(req, socket, head, (ws) => {
+                  const peerId = ++netPeerIdCounter;
+                  netClients.set(ws, peerId);
+                  ws.on('message', (data) => {
+                    let frame;
+                    try { frame = JSON.parse(data.toString()); } catch (e) { return; }
+                    // Dispatch tdscript.rpc / tdscript.repl frames to the runtime
+                    if (frame.method === 'tdscript.rpc') {
+                      netRuntime.TDScriptRuntime.Network.dispatchRpc(frame, peerId);
+                    } else if (frame.method === 'tdscript.repl') {
+                      netRuntime.TDScriptRuntime.Network.applyReplicated(frame);
+                    } else {
+                      // Unknown method — let the runtime handle it
+                      // (future: route to JSON-RPC server for non-tdscript methods)
+                    }
+                  });
+                  ws.on('close', () => { netClients.delete(ws); });
+                  ws.on('error', () => { netClients.delete(ws); });
+                });
+              } else {
+                socket.destroy();
+              }
+            });
+            netServer.listen(netPort, () => {
+              ok(`Game-net server: ws://localhost:${netPort}${serverUrl.path}`);
+            });
+          } catch (e) {
+            warn(`ws package not installed; game-net server disabled. (${e.message})`);
+          }
+        }
+      }
+    }
+  }
 
   if (wss) {
     server.on('upgrade', (req, socket, head) => {
