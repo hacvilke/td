@@ -161,6 +161,8 @@ struct Mat3 {
     }
 };
 
-inline Mat3 operator*(float s, const Mat3& mat) { return mat * s; }
+// Note: no `inline Mat3 operator*(float, const Mat3&)` free function —
+// clang's WASM build incorrectly flags it as conflicting with the
+// analogous `Quat` overload in quat.h.  Use `mat * s` instead of `s * mat`.
 
 } // namespace td

@@ -56,6 +56,11 @@
 #include "../src/core/i18n.h"                 // td::i18n (locale tables)
 #include "../src/platform/xr_input.h"         // TouchManager, GamepadManager
 #include "../src/renderer/shader_graph.h"     // td::shader_graph::compile
+// Physics headers must be included OUTSIDE the extern "C" block below —
+// they define C++ classes (Vec3, Quat, Mat3, RigidBody3D) with templates
+// and operator overloads that don't compile under C linkage.
+#include "../src/physics/physics_world_3d.h"
+#include "../src/physics/constraints_3d.h"
 
 // =============================================================================
 // Global state. Held for the lifetime of the WASM module. Emscripten's main
@@ -1042,8 +1047,8 @@ const char* td_shader_graph_compile(int nodeCount)
 // code uses the typed TDEngine.physics.* wrapper (in web/td_api.js) which
 // hides the cwrap boilerplate.
 // =============================================================================
-#include "../src/physics/physics_world_3d.h"
-#include "../src/physics/constraints_3d.h"
+// (physics_world_3d.h + constraints_3d.h are included at the top of this
+//  file, outside the extern "C" block — they require C++ linkage.)
 
 namespace td {
 static PhysicsWorld3D* g_physicsWorld3D = nullptr;
