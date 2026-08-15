@@ -15,6 +15,7 @@
 //     built on top of MessageWriter/Reader.
 // =============================================================================
 #include "transport_impl.h"
+#include "json_rpc.h"
 
 #include <cerrno>     // errno on POSIX (WSAGetLastError is used on Win32 instead)
 #include <chrono>
@@ -1322,11 +1323,12 @@ uint32_t NetworkInterface::nowMs() {
 
 // ---------------------------------------------------------------------------
 // Public RpcServer (declared in transport.h, implemented here)
+//
+// Uses the JSON wire format defined in json_rpc.h — matches the JS TDNet.RPC
+// 28-test suite in tests/test_net_websocket.js exactly. A C++ server can
+// dispatch frames produced by a JS client (and vice versa) with no
+// translation step.
 // ---------------------------------------------------------------------------
-
-// The public RpcServer routes through the SignalBus as the header comment
-// describes. We provide a working implementation that uses the SignalBus
-// with the "rpc:<name>" payload convention.
 
 void RpcServer::registerMethod(const char* name,
                                std::function<void(int peerId,
@@ -1339,34 +1341,185 @@ void RpcServer::registerMethod(const char* name,
         });
 }
 
-void RpcServer::callRemote(const char* name, const char* argsJson, int targetPeer) {
-    if (!name) return;
-    std::string event = std::string("rpc:") + name;
-    SignalPayload p;
-    p.intValue = targetPeer;
-    p.setStr(argsJson ? argsJson : "");
-    SignalBus::get().emit(event.c_str(), p);
+bool RpcServer::callRemote(const char* name, const char* argsJson, int targetPeer) {
+    if (!name || !m_peer) return false;
+    std::string frame;
+    td::net::encodeNotify(frame, name, argsJson ? argsJson : "[]");
+    NetPacket pkt;
+    pkt.reliability = NetReliability::Reliable;
+    pkt.channel     = 0;
+    pkt.data        = frame.data();
+    pkt.size        = static_cast<int>(frame.size());
+    pkt.targetPeer  = targetPeer;
+    return m_peer->send(pkt);
+}
+
+uint32_t RpcServer::callWithReply(const char* name, const char* argsJson,
+                                   int targetPeer, uint32_t timeoutMs,
+                                   std::function<void(bool ok,
+                                                      const char* resultJson)> cb) {
+    if (!name || !m_peer || !cb) return 0;
+    uint32_t id = m_nextCallId++;
+    std::string frame;
+    td::net::encodeRequest(frame, id, name, argsJson ? argsJson : "[]");
+
+    // Monotonic clock: same base as td::net's monotonicNowMs() (process start).
+    static auto clockStart = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    uint32_t nowMs = static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - clockStart).count());
+
+    PendingCall pc;
+    pc.id          = id;
+    pc.deadlineMs  = nowMs + timeoutMs;
+    pc.cb          = std::move(cb);
+    m_pending.push_back(std::move(pc));
+
+    NetPacket pkt;
+    pkt.reliability = NetReliability::Reliable;
+    pkt.channel     = 0;
+    pkt.data        = frame.data();
+    pkt.size        = static_cast<int>(frame.size());
+    pkt.targetPeer  = targetPeer;
+    if (!m_peer->send(pkt)) {
+        // Send failed — fail the call immediately.
+        auto cbLocal = std::move(m_pending.back().cb);
+        m_pending.pop_back();
+        cbLocal(false, "send failed");
+        return id;
+    }
+    return id;
+}
+
+bool RpcServer::sendResponse(uint32_t callId, const char* resultJson, int targetPeer) {
+    if (!m_peer) return false;
+    std::string frame;
+    td::net::encodeResponse(frame, callId, resultJson ? resultJson : "null");
+    NetPacket pkt;
+    pkt.reliability = NetReliability::Reliable;
+    pkt.channel     = 0;
+    pkt.data        = frame.data();
+    pkt.size        = static_cast<int>(frame.size());
+    pkt.targetPeer  = targetPeer;
+    return m_peer->send(pkt);
+}
+
+bool RpcServer::sendError(uint32_t callId, const char* errorMessage, int targetPeer) {
+    if (!m_peer) return false;
+    std::string frame;
+    td::net::encodeError(frame, callId, errorMessage ? errorMessage : "error");
+    NetPacket pkt;
+    pkt.reliability = NetReliability::Reliable;
+    pkt.channel     = 0;
+    pkt.data        = frame.data();
+    pkt.size        = static_cast<int>(frame.size());
+    pkt.targetPeer  = targetPeer;
+    return m_peer->send(pkt);
 }
 
 void RpcServer::dispatchPacket(int peerId, const void* data, int size) {
-    // Treat the packet as a JSON string and emit the corresponding rpc:* event.
     if (!data || size <= 0) return;
-    // Parse: the packet is expected to be "<methodName>\n<json>". This is
-    // a tiny convention that matches the test usage.
-    const char* str = static_cast<const char*>(data);
-    int sep = -1;
-    for (int i = 0; i < size; i++) {
-        if (str[i] == '\n') { sep = i; break; }
+
+    td::net::RpcFrame frame;
+    if (!td::net::parseFrame(static_cast<const char*>(data),
+                              static_cast<size_t>(size), frame)) {
+        TD_LOG_WARN("RpcServer: failed to parse frame from peer %d: %s",
+                    peerId, frame.errorMessage.c_str());
+        return;
     }
-    if (sep < 0) return;
-    std::string name(str, static_cast<size_t>(sep));
-    std::string args(str + sep + 1,
-                     static_cast<size_t>(size - sep - 1));
-    std::string event = std::string("rpc:") + name;
-    SignalPayload p;
-    p.intValue = peerId;
-    p.setStr(args.c_str());
-    SignalBus::get().emit(event.c_str(), p);
+
+    switch (frame.kind) {
+        case td::net::RpcFrame::Kind::Request: {
+            // Dispatch to registered handlers.
+            std::string event = std::string("rpc:") + frame.method;
+            SignalPayload p;
+            p.intValue = peerId;
+            p.setStr(frame.argsJson.c_str());
+            SignalBus::get().emit(event.c_str(), p);
+
+            // If no handler was registered (we can't tell directly from
+            // SignalBus — it just no-ops), send an error response so the
+            // caller doesn't time out. We detect "no handler" by checking
+            // whether the event exists in the bus.
+            //
+            // For now, we always send a success response with `null` result
+            // if the method had no handler. The caller's contract is: if
+            // you care about the result, register a handler that returns
+            // something meaningful. (This matches the JS side's behavior:
+            // unknown methods return an error; methods with no return value
+            // return undefined.)
+            if (SignalBus::get().eventExists(event.c_str())) {
+                // Handler ran. We don't currently capture its return value
+                // (the SignalBus payload can't carry an arbitrary string
+                // back out). For request/response semantics, the handler
+                // should call sendResponse() explicitly with the result.
+                //
+                // If it didn't, we send a null response so the caller
+                // doesn't hang.
+                sendResponse(frame.id, "null", peerId);
+            } else {
+                sendError(frame.id,
+                          (std::string("unknown method: ") + frame.method).c_str(),
+                          peerId);
+            }
+            break;
+        }
+        case td::net::RpcFrame::Kind::Response: {
+            // Match against a pending callWithReply() call.
+            for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
+                if (it->id == frame.id) {
+                    auto cb = std::move(it->cb);
+                    m_pending.erase(it);
+                    cb(true, frame.resultJson.c_str());
+                    return;
+                }
+            }
+            // No matching pending call — drop silently.
+            TD_LOG_WARN("RpcServer: response for unknown call id %u", frame.id);
+            break;
+        }
+        case td::net::RpcFrame::Kind::Error: {
+            for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
+                if (it->id == frame.id) {
+                    auto cb = std::move(it->cb);
+                    m_pending.erase(it);
+                    cb(false, frame.errorMessage.c_str());
+                    return;
+                }
+            }
+            TD_LOG_WARN("RpcServer: error response for unknown call id %u",
+                        frame.id);
+            break;
+        }
+        case td::net::RpcFrame::Kind::Notify: {
+            std::string event = std::string("rpc:") + frame.method;
+            SignalPayload p;
+            p.intValue = peerId;
+            p.setStr(frame.argsJson.c_str());
+            SignalBus::get().emit(event.c_str(), p);
+            break;
+        }
+        default:
+            // Invalid — already logged above.
+            break;
+    }
+}
+
+void RpcServer::update(uint32_t nowMs) {
+    for (auto it = m_pending.begin(); it != m_pending.end(); ) {
+        if (nowMs >= it->deadlineMs) {
+            auto cb = std::move(it->cb);
+            it = m_pending.erase(it);
+            cb(false, "timeout");
+        } else {
+            ++it;
+        }
+    }
+}
+
+void RpcServer::reset() {
+    m_pending.clear();
+    m_nextCallId = 1;
 }
 
 } // namespace td

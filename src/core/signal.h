@@ -191,6 +191,13 @@ public:
 
     int eventCount() const { return m_eventCount; }
 
+    // Returns true if at least one subscriber has ever been registered for
+    // `name` (even if all slots are now inactive — we only forget an event
+    // name on clearAll()). Used by RpcServer to detect "unknown method".
+    bool eventExists(const char* name) const {
+        return findEvent(name) >= 0;
+    }
+
 private:
     SignalBus() = default;
 

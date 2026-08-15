@@ -106,6 +106,7 @@ set(ENGINE_PORTABLE_SOURCES
     src/voxel/voxel.cpp
     src/net/transport.cpp
     src/net/server_authoritative.cpp
+    src/net/json_rpc.cpp
 )
 
 # NOTE: src/td/ (custom scripting VM) and src/net/ (Winsock socket/server/client)
@@ -288,13 +289,27 @@ else()
         # fragmentation, client prediction + server reconciliation.
         # Linked directly against the .cpp (not td-engine) so it builds on
         # Linux without the GL renderer. Uses stub_logger.cpp for Logger.
+        # Also links json_rpc.cpp because transport.cpp's public RpcServer
+        # now uses the JSON wire format defined there.
         add_executable(test_net
             tests/test_net.cpp
             src/net/transport.cpp
             src/net/server_authoritative.cpp
+            src/net/json_rpc.cpp
             tests/stub_logger.cpp)
         target_include_directories(test_net PRIVATE ${CMAKE_SOURCE_DIR}/src)
         target_link_libraries(test_net PRIVATE Threads::Threads)
+        # JSON-RPC parity tests: verify the C++ JSON-RPC wire format matches
+        # the JS TDNet.RPC wire format (28-test suite in
+        # tests/test_net_websocket.js). Uses MockNetPeer (loopback, no
+        # sockets) so it builds + runs anywhere without network access.
+        add_executable(test_net_json_rpc
+            tests/test_net_json_rpc.cpp
+            src/net/transport.cpp
+            src/net/json_rpc.cpp
+            tests/stub_logger.cpp)
+        target_include_directories(test_net_json_rpc PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(test_net_json_rpc PRIVATE Threads::Threads)
         # 3D character controller tests (wave1-physaudio): swept capsule
         # collision, sliding, slope limit, step handling, ground detection.
         add_executable(test_character_controller
@@ -312,6 +327,7 @@ else()
         add_test(NAME ui    COMMAND test_ui)
         add_test(NAME voxel COMMAND test_voxel)
         add_test(NAME net   COMMAND test_net)
+        add_test(NAME net_json_rpc COMMAND test_net_json_rpc)
         add_test(NAME character_controller COMMAND test_character_controller)
     endif()
 

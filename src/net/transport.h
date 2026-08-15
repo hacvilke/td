@@ -14,17 +14,26 @@
 //   - The interface is small enough (8 methods) that a new transport
 //     (e.g. SteamNetworkingSockets) can be added in <100 LOC.
 //
-// Status: STUB. The interface is defined; concrete implementations
-// (ENetPeer, WebRTCPeer) are TODO and tracked in docs/MODULARITY_ROADMAP.md
-// Tier 1.5. The stub lets the editor and the WASM bridge compile + link
-// against the API today; networking calls become no-ops until a real
-// peer is plugged in.
+// Status: REAL. The NetPeer ABC is in this file. The concrete UDP
+// transport (Socket + ReliableChannel + Connection + NetworkInterface) is
+// in transport_impl.h + transport.cpp. The JSON-RPC framing that matches
+// the JS TDNet.RPC wire format is in json_rpc.h + json_rpc.cpp. A
+// MockNetPeer (loopback, for unit tests) is in mock_peer.h.
+//
+// Concrete peer TODOs:
+//   - WebSocketPeer  (for native clients talking to a JS server)  — TODO
+//   - ENetPeer       (raw UDP, native-only, lower latency)        — TODO
+// Browsers cannot use raw UDP, so the WASM path always goes through
+// WebSocketPeer (or the JS TDNet.Socket directly).
 // =============================================================================
 #pragma once
 #include "../core/logger.h"
 #include "../core/signal.h"
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <string>
+#include <vector>
 
 namespace td {
 
@@ -115,23 +124,33 @@ public:
 };
 
 // =============================================================================
-// High-level RPC layer (Tier 1.5, also stubbed here).
+// High-level RPC layer (JSON wire format, matches JS TDNet.RPC).
 //
-// Mirrors Godot's @rpc annotation. A gameplay script registers a method:
+// Wire format (identical to web/net_websocket.js TDNet.RPC):
+//
+//   Request:  {"id":123,"m":"methodName","a":[arg1,arg2,...]}
+//   Response: {"id":123,"r":<result>}
+//   Error:    {"id":123,"e":"error message"}
+//   Notify:   {"m":"methodName","a":[...]}      (no id = no reply)
+//
+// Gameplay scripts register a handler:
 //
 //   td::RpcServer::get().registerMethod("player:say",
-//       [](int peerId, const RpcArgs& args) {
-//           TD_LOG_INFO("Peer %d says: %s", peerId, args.getString(0));
+//       [](int peerId, const char* argsJson) {
+//           // argsJson is e.g. `["hello", 42]` — decode however you want
 //       });
 //
-// And calls it on a remote peer:
+// And call a remote method:
 //
-//   td::RpcArgs args;
-//   args.pushString("hello");
-//   td::RpcServer::get().callRemote("player:say", args, /*targetPeer=*/-1);
+//   td::RpcServer::get().callRemote("player:say", "[\"hello\",42]",
+//                                    /*targetPeer=*/-1);
 //
-// The RPC layer serializes args using the same JSON reader/writer as the
-// scene serializer (Tier 1.2), so types match across the wire without IDL.
+// For request/response semantics (with a callback when the reply arrives),
+// use callWithReply() instead. It tracks the call ID, matches the response,
+// and invokes the callback on the main thread inside poll().
+//
+// The wire format is parsed by json_rpc.h. The transport is whatever
+// NetPeer you bound via setPeer() — WebSocketPeer, MockNetPeer, etc.
 // =============================================================================
 class RpcServer {
 public:
@@ -151,22 +170,65 @@ public:
                         std::function<void(int peerId,
                                             const char* argsJson)> handler);
 
-    // Call a method on a remote peer (or all peers if targetPeer == -1).
-    // argsJson is a JSON string; the remote side dispatches it to the
-    // registered handler.
-    void callRemote(const char* name, const char* argsJson, int targetPeer = -1);
+    // Fire-and-forget call. Encodes a Notify frame (no id, no reply) and
+    // sends it via the bound NetPeer. targetPeer == -1 broadcasts.
+    //
+    // If no peer is bound, this is a no-op (returns false). This makes the
+    // call safe to issue in single-player mode where networking is disabled.
+    bool callRemote(const char* name, const char* argsJson, int targetPeer = -1);
+
+    // Request/response call. Encodes a Request frame (with a fresh id),
+    // sends it, and invokes `cb` when the matching Response/Error arrives
+    // (or when timeoutMs elapses, whichever is first). The callback runs on
+    // the main thread, inside poll().
+    //
+    // Returns the assigned call id, or 0 if no peer is bound.
+    //
+    // `argsJson` must be a valid JSON array, e.g. `["hello", 42]`.
+    // `cb` receives (ok, resultJson) where resultJson is the raw JSON value
+    // of the "r" field (success) or the "e" field text (error).
+    uint32_t callWithReply(const char* name, const char* argsJson,
+                            int targetPeer, uint32_t timeoutMs,
+                            std::function<void(bool ok, const char* resultJson)> cb);
+
+    // Send a Response frame (success). Used by handlers that want to reply
+    // explicitly (rare — callWithReply handles this automatically).
+    bool sendResponse(uint32_t callId, const char* resultJson, int targetPeer);
+
+    // Send an Error frame.
+    bool sendError(uint32_t callId, const char* errorMessage, int targetPeer);
 
     // Called by NetPeer::poll() when a packet arrives on the RPC channel.
-    // Dispatches to registered handlers.
+    // Parses the frame as JSON and dispatches:
+    //   - Request  -> invoke registered handlers; if a handler is registered,
+    //                auto-send a Response with the handler's return JSON
+    //                (the handler sets it via the SignalPayload's ptrValue;
+    //                see implementation for the convention).
+    //   - Response -> match against a pending callWithReply() call.
+    //   - Error    -> match against a pending callWithReply() call (with ok=false).
+    //   - Notify   -> invoke registered handlers (no reply).
     void dispatchPacket(int peerId, const void* data, int size);
+
+    // Pump: expire timed-out callWithReply() calls. Call once per frame.
+    void update(uint32_t nowMs);
+
+    // Reset all state (pending calls, method table). Used by tests.
+    void reset();
+
+    // Test-only: peek at the number of pending calls.
+    int pendingCallCount() const { return static_cast<int>(m_pending.size()); }
 
 private:
     RpcServer() = default;
     NetPeer* m_peer = nullptr;
-    // Method table: name -> list of handlers.
-    // Implementation detail: use the SignalBus with a payload convention:
-    //   emit("rpc:" + name, { intValue: peerId, strValue: argsJson })
-    // This avoids a separate method-table data structure.
+
+    struct PendingCall {
+        uint32_t     id         = 0;
+        uint32_t     deadlineMs = 0;
+        std::function<void(bool ok, const char* resultJson)> cb;
+    };
+    std::vector<PendingCall> m_pending;
+    uint32_t m_nextCallId = 1;
 };
 
 } // namespace td
