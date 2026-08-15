@@ -14,7 +14,7 @@ exposes a clean JS API through `TDBridge`.
 ┌─────────────────────────────────────────────────────────────┐
 │  Browser                                                    │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  Your JS game (web/examples/your_game.js)           │   │
+│  │  Your JS/TS game (your-game/src/main.ts)            │   │
 │  │  - Game rules, scoring, state machine               │   │
 │  │  - Reads input, calls TDBridge.beatStart(...) etc.  │   │
 │  └────────────────┬────────────────────────────────────┘   │
@@ -196,8 +196,8 @@ TDBridge.onReady(async () => {
 });
 ```
 
-See `web/examples/beat_demo.js` for the complete, polished version with
-falling notes, particles, scoring, and HUD.
+See the beat system section of `docs.html` for the full API reference
+(falling notes, particles, scoring, HUD patterns).
 
 ---
 
@@ -290,9 +290,10 @@ hard-resetting on loop detection.
   and `js_bridge.js` forwards those logs to `console.log`/`console.warn`/
   `console.error` with a `[TD]` prefix.
 
-- **The on-screen console.** `web/index.html` has a hidden `#engine-console`
-  div that mirrors the engine's log output. Uncomment the CSS rule for
-  `#engine-console` to make it visible.
+- **The on-screen console.** If you mount `error_boundary.js` in your dev UI,
+  it mirrors the engine's log output and auto-shows a crash card on uncaught
+  errors. You can also use `inspector.js` and `profiler.js` as dev overlays
+  in your own game shell — see `docs.html` for the mount API.
 
 - **Check the engine version.** `TDBridge.wasmExports.cwrap('td_get_version', 'string')()`
   should return `"TD Engine 1.0.0 (WebAssembly)"`.
@@ -302,15 +303,19 @@ hard-resetting on loop detection.
 
 ---
 
-## 9. Full examples to learn from
+## 9. Where to go next
 
-| File | What it demonstrates |
-|---|---|
-| `web/examples/pong.js` | Minimal: 2 paddles, a ball, AI, scoring. ~300 lines. |
-| `web/examples/voidrunner.js` | Full game: 3 enemy types, power-ups, particles, parallax, waves. ~520 lines. |
-| `web/examples/beat_demo.js` | Rhythm game: beat tracker, on-beat detection, combo, falling notes. ~250 lines. |
+The example games that used to ship in `web/examples/` have been removed to keep
+the engine focused on its core: the C/C++/JS/TS stack and the API surface. To
+learn the engine:
 
-Read them. Copy them. Modify them. That's the fastest way to learn.
+1. **Start from the quickstart in `docs.html`** — it shows the minimal boot +
+   ECS + input + game loop pattern in ~20 lines.
+2. **Read the API reference sections** in `docs.html` (ECS, Input, Beat System,
+   Scripting VM, i18n, Networking, Persistence, Inspector, Profiler).
+3. **Write your own game** in a folder you own, with the engine as a dependency.
+   The planned EXE bundler (roadmap) will wrap your finished JS game into a
+   single Windows `.exe` for Steam / itch.io distribution.
 
 ---
 
@@ -379,5 +384,6 @@ td_my_fn(...args);
    bridge works (architecture diagram, what's ported vs excluded, the
    Emscripten build flags).
 
-4. **Build something.** The fastest way to learn is to copy `beat_demo.js`,
-   change the BPM, swap the sprites, and ship your own rhythm game.
+4. **Build something.** The fastest way to learn is to start from the
+   quickstart in `docs.html`, change the BPM, swap the sprites, and ship
+   your own rhythm game.
