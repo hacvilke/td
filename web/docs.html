@@ -281,6 +281,19 @@
             font-size: 12px;
             color: #94a3b8;
         }
+        .td-new {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 6px;
+            background: #16a34a;
+            color: #fff;
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-radius: 3px;
+            vertical-align: middle;
+        }
         .td-module-grid .m .src {
             display: inline-block;
             margin-top: 8px;
@@ -346,14 +359,23 @@
         <li><a href="#api-beat">Beat System</a></li>
         <li><a href="#api-script">Scripting VM</a></li>
         <li><a href="#api-i18n">i18n</a></li>
+        <li><a href="#api-physics">3D Physics</a></li>
         <li><a href="#api-net">Networking</a></li>
         <li><a href="#api-persist">Persistence</a></li>
         <li><a href="#api-inspector">Inspector</a></li>
         <li><a href="#api-profiler">Profiler</a></li>
     </ul>
+    <h4>Game Kit (web-dev)</h4>
+    <ul>
+        <li><a href="#api-assets">TDAssets (asset pipeline)</a></li>
+        <li><a href="#api-cdn">TDCDN (multi-origin routing)</a></li>
+        <li><a href="#api-rest">TDRest (REST helper)</a></li>
+        <li><a href="#api-tdserver">TDServer (server hooks)</a></li>
+    </ul>
     <h4>Guides</h4>
     <ul>
         <li><a href="#guide-selfhost">Self-hosting</a></li>
+        <li><a href="#guide-server">Standalone server</a></li>
         <li><a href="#guide-multiplayer">Multiplayer</a></li>
         <li><a href="#guide-bundler">EXE bundler (Inno Setup)</a></li>
         <li><a href="#guide-deprecated">Deprecated API tracker</a></li>
@@ -527,14 +549,27 @@ $ cmake -B build -S . -DTD_BUILD_EDITOR=ON &amp;&amp; cmake --build build</pre>
 <h2 id="api-lifecycle">Lifecycle</h2>
 <p>
     The engine has a single boot entry point and a single shutdown hook. Everything else is event-driven.
+    All lifecycle methods are on the <code>TDEngine.lifecycle</code> namespace (in <code>web/td_api.js</code>).
 </p>
 <table class="td-api-table">
     <tr><th>Function</th><th class="desc">Description</th></tr>
-    <tr><td><code>TDBridge.init(canvasId)</code></td><td class="desc">Async. Downloads <code>.wasm</code>, creates GL context, starts the render loop. Resolves when the engine is ready.</td></tr>
-    <tr><td><code>TDBridge.onReady(cb)</code></td><td class="desc">Register a callback that fires once when the engine is ready.</td></tr>
+    <tr><td><code>await TDEngine.lifecycle.init(canvasId)</code></td><td class="desc">Async. Downloads <code>.wasm</code>, creates GL context, starts the render loop. Resolves when the engine is ready. Idempotent — calling twice is a no-op.</td></tr>
+    <tr><td><code>TDEngine.lifecycle.onReady(cb)</code></td><td class="desc">Register a callback that fires once when the engine is ready. If already ready, fires synchronously.</td></tr>
+    <tr><td><code>TDEngine.lifecycle.shutdown()</code></td><td class="desc">Tears down the engine: stops the render loop, frees WASM resources, calls <code>td_shutdown</code>.</td></tr>
+    <tr><td><code>TDEngine.lifecycle.getVersion()</code></td><td class="desc">Returns the engine version string (e.g. <code>"1.0.0"</code>).</td></tr>
+    <tr><td><code>TDEngine.lifecycle.isReady()</code></td><td class="desc">Returns <code>true</code> once <code>init()</code> has resolved.</td></tr>
+    <tr><td><code>TDEngine.lifecycle.resize(w, h)</code></td><td class="desc">Resize the engine's GL context + canvas. Call when the canvas element resizes.</td></tr>
+</table>
+<p>
+    Low-level bridge access is also available (for cases where the <code>TDEngine.*</code> wrapper doesn't expose what you need):
+</p>
+<table class="td-api-table">
+    <tr><th>Function</th><th class="desc">Description</th></tr>
+    <tr><td><code>TDBridge.init(canvasId)</code></td><td class="desc">Async. Low-level WASM boot. <code>TDEngine.lifecycle.init</code> calls this — prefer the wrapper.</td></tr>
+    <tr><td><code>TDBridge.onReady(cb)</code></td><td class="desc">Low-level ready callback.</td></tr>
     <tr><td><code>TDBridge.onLog(cb)</code></td><td class="desc">Register a callback for engine log lines. <code>cb({level, message})</code> where level is <code>info|warn|error|deprecated</code>.</td></tr>
     <tr><td><code>TDBridge.resumeAudio()</code></td><td class="desc">Resumes the Web Audio context (must be called from a user gesture, e.g. a click).</td></tr>
-    <tr><td><code>TDBridge.getVersion()</code></td><td class="desc">Returns the engine version string (e.g. <code>"1.0.0"</code>).</td></tr>
+    <tr><td><code>TDBridge.getVersion()</code></td><td class="desc">Returns the engine version string.</td></tr>
 </table>
 
 <h2 id="api-ecs">ECS</h2>
@@ -542,14 +577,19 @@ $ cmake -B build -S . -DTD_BUILD_EDITOR=ON &amp;&amp; cmake --build build</pre>
     The entity-component-system is the core of the engine. Entities are integer IDs. Components are
     attached via setter functions. The engine renders every active sprite-carrying entity each frame.
 </p>
-<pre><span class="kw">const</span> e = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">create</span>();            <span class="com">// returns an entity ID</span>
+<pre><span class="com">// Create an entity (returns a numeric ID). Optional name for debugging.</span>
+<span class="kw">const</span> e = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">create</span>(<span class="str">"Player"</span>);
+
+<span class="com">// Set components (all setters take the entity ID first).</span>
 <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setPosition</span>(e, <span class="num">100</span>, <span class="num">200</span>);
 <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setVelocity</span>(e, <span class="num">0</span>, <span class="num">-50</span>);          <span class="com">// pixels per second</span>
-<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setSprite</span>(e, <span class="str">"ship.png"</span>);
+<span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setSprite</span>(e, <span class="num">64</span>, <span class="num">64</span>, <span class="num">1</span>, <span class="num">1</span>, <span class="num">1</span>, <span class="num">1</span>);  <span class="com">// w, h, r, g, b, a (each 0..1)</span>
 <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">setCollider</span>(e, <span class="num">32</span>, <span class="num">32</span>);           <span class="com">// w, h in pixels</span>
 
-<span class="kw">const</span> [x, y] = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">getPosition</span>(e);  <span class="com">// only getter exposed</span>
+<span class="com">// Read back position (the only getter currently exposed).</span>
+<span class="kw">const</span> pos = <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">getPosition</span>(e);  <span class="com">// returns { x, y }</span>
 
+<span class="com">// Lifecycle.</span>
 <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">isValid</span>(e);                     <span class="com">// false after destroy()</span>
 <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">destroy</span>(e);
 <span class="fn">TDEngine</span>.<span class="prop">ecs</span>.<span class="fn">count</span>();                          <span class="com">// active entity count</span></pre>
@@ -566,40 +606,87 @@ $ cmake -B build -S . -DTD_BUILD_EDITOR=ON &amp;&amp; cmake --build build</pre>
     Keyboard, mouse, touch, and gamepad are all unified under <code>TDEngine.input</code>. State is polled
     (not event-based) so you can read it any time inside your game loop.
 </p>
+<p>
+    Keyboard codes are <b>Win32 VK codes</b> (not KeyboardEvent.code strings). The <code>TDEngine.input.Key</code>
+    table provides friendly constants (<code>TDEngine.input.Key.A</code>, <code>.Space</code>, <code>.ArrowLeft</code>,
+    etc.) so you don't have to memorize the numbers.
+</p>
 <table class="td-api-table">
     <tr><th>Function</th><th class="desc">Description</th></tr>
-    <tr><td><code>input.isKeyDown(code)</code></td><td class="desc"><code>code</code> is a KeyboardEvent.code string (<code>'KeyA'</code>, <code>'ArrowLeft'</code>, <code>'Space'</code>). Returns bool.</td></tr>
+    <tr><td><code>input.isKeyDown(vk)</code></td><td class="desc">VK code (use <code>TDEngine.input.Key.A</code>, <code>.Space</code>, <code>.Left</code>, etc.). Returns bool.</td></tr>
     <tr><td><code>input.isMouseDown(button)</code></td><td class="desc"><code>button</code> is 0 (left), 1 (middle), 2 (right). Returns bool.</td></tr>
-    <tr><td><code>input.getMousePos()</code></td><td class="desc">Returns <code>[x, y]</code> in canvas pixels.</td></tr>
-    <tr><td><code>input.touchCount()</code></td><td class="desc">Number of active touch points.</td></tr>
-    <tr><td><code>input.touchX(i) / touchY(i)</code></td><td class="desc">Position of touch point <code>i</code>.</td></tr>
-    <tr><td><code>input.touchPinchScale()</code></td><td class="desc">Pinch-to-zoom scale factor relative to touch-start.</td></tr>
-    <tr><td><code>input.gamepadButtonPressed(i)</code></td><td class="desc">Standard Gamepad button state.</td></tr>
-    <tr><td><code>input.gamepadAxis(i)</code></td><td class="desc">Returns <code>[x, y]</code> of the left analog stick, normalized to [-1, 1].</td></tr>
+    <tr><td><code>input.getMousePos()</code></td><td class="desc">Returns <code>{ x, y }</code> in canvas pixels.</td></tr>
+    <tr><td><code>input.Key</code></td><td class="desc">VK code constants: <code>.A</code>..<code>.Z</code>, <code>.Num0</code>..<code>.Num9</code>, <code>.F1</code>..<code>.F12</code>, <code>.Left/Right/Up/Down</code>, <code>.Space</code>, <code>.Enter</code>, <code>.Escape</code>, <code>.Shift</code>, <code>.Control</code>, <code>.Alt</code>.</td></tr>
+    <tr><td><code>input.Mouse</code></td><td class="desc">Mouse button constants: <code>.Left = 0</code>, <code>.Right = 1</code>, <code>.Middle = 2</code>.</td></tr>
+</table>
+<pre><span class="kw">if</span> (<span class="fn">TDEngine</span>.<span class="prop">input</span>.<span class="fn">isKeyDown</span>(<span class="fn">TDEngine</span>.<span class="prop">input</span>.<span class="prop">Key</span>.<span class="prop">Space</span>)) {
+  <span class="fn">jump</span>();
+}
+<span class="kw">const</span> { x, y } = <span class="fn">TDEngine</span>.<span class="prop">input</span>.<span class="fn">getMousePos</span>();
+<span class="kw">if</span> (<span class="fn">TDEngine</span>.<span class="prop">input</span>.<span class="fn">isMouseDown</span>(<span class="fn">TDEngine</span>.<span class="prop">input</span>.<span class="prop">Mouse</span>.<span class="prop">Left</span>)) {
+  <span class="fn">fireBullet</span>(x, y);
+}</pre>
+<p>
+    Touch and gamepad are separate namespaces for clarity:
+</p>
+<table class="td-api-table">
+    <tr><th>Function</th><th class="desc">Description</th></tr>
+    <tr><td><code>TDEngine.touch.count()</code></td><td class="desc">Number of active touch points.</td></tr>
+    <tr><td><code>TDEngine.touch.x(i) / .y(i)</code></td><td class="desc">Position of touch point <code>i</code>.</td></tr>
+    <tr><td><code>TDEngine.touch.pinchScale()</code></td><td class="desc">Pinch-to-zoom scale factor relative to touch-start.</td></tr>
+    <tr><td><code>TDEngine.gamepad.buttonPressed(idx, btn)</code></td><td class="desc">Standard Gamepad button state.</td></tr>
+    <tr><td><code>TDEngine.gamepad.axis(idx, axis)</code></td><td class="desc">Returns the analog stick value, normalized to [-1, 1]. Axis 0 = X, 1 = Y.</td></tr>
 </table>
 
 <h2 id="api-beat">Beat System</h2>
 <p>
     The beat system drives rhythm-game mechanics. It schedules callbacks on a fixed BPM grid and
-    tracks combos for on-beat hits.
+    tracks combos for on-beat hits. Each <em>entity</em> can have its own beat tracker — multiple
+    entities with different BPMs coexist on the same world.
 </p>
-<pre><span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">setBpm</span>(<span class="num">100</span>);
-<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">start</span>();
+<pre><span class="com">// Attach a beat tracker to an entity. 140 BPM, 150ms half-window (300ms total).</span>
+<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">start</span>(songEntity, <span class="num">140.0</span>, <span class="num">0.15</span>);
 
-<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">onBeat</span>(<span class="kw">function</span>(beatCount) {
-  <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">"beat #"</span> + beatCount);
+<span class="com">// Beat callback receives (beatCount, beatTime) — beatTime is in seconds.</span>
+<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">setCallback</span>((beatCount, beatTime) =&gt; {
+  <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">"beat #"</span> + beatCount + <span class="str">" at "</span> + beatTime.<span class="fn">toFixed</span>(<span class="num">3</span>) + <span class="str">"s"</span>);
+  <span class="fn">spawnNote</span>(beatCount);
 });
 
 <span class="com">// In a keydown handler:</span>
-<span class="kw">if</span> (<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">isOnBeat</span>(<span class="num">0.15</span>)) {  <span class="com">// 150ms tolerance window</span>
-  <span class="kw">const</span> combo = <span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">registerHit</span>();
-  <span class="kw">const</span> bonus = <span class="num">100</span> + combo * <span class="num">10</span>;
-}</pre>
+<span class="kw">if</span> (<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">isOnBeat</span>(songEntity)) {
+  <span class="kw">const</span> newCombo = <span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">registerHit</span>(songEntity, <span class="kw">false</span>);  <span class="com">// returns combo count</span>
+  score += <span class="num">100</span> + newCombo * <span class="num">10</span>;                                          <span class="com">// game's scoring formula</span>
+}
 
-<h2 id="api-script">Scripting VM</h2>
+<span class="com">// Change BPM mid-song (recomputes spb + bounds).</span>
+<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">setBpm</span>(songEntity, <span class="num">160.0</span>);
+
+<span class="com">// Stop tracking.</span>
+<span class="fn">TDEngine</span>.<span class="prop">beat</span>.<span class="fn">stop</span>(songEntity);</pre>
+<p>The full 13-method surface:</p>
+<table class="td-api-table">
+    <tr><th>Function</th><th class="desc">Description</th></tr>
+    <tr><td><code>beat.start(entityId, bpm, windowHalfSec)</code></td><td class="desc">Attach a <code>BeatTrackerComponent</code> with the given BPM and tolerance.</td></tr>
+    <tr><td><code>beat.stop(entityId)</code></td><td class="desc">Detach the component.</td></tr>
+    <tr><td><code>beat.isOnBeat(entityId)</code></td><td class="desc">Returns <code>true</code> if inside the on-beat window (two-half-window trick — see <code>docs/RHYTHM_MECHANICS.md</code>).</td></tr>
+    <tr><td><code>beat.getCount(entityId)</code></td><td class="desc">Total beats elapsed since <code>start()</code>.</td></tr>
+    <tr><td><code>beat.getNextBeatTime(entityId)</code></td><td class="desc">Engine time (seconds) of the next beat tick.</td></tr>
+    <tr><td><code>beat.getLastBeatTime(entityId)</code></td><td class="desc">Engine time (seconds) of the most recent beat tick.</td></tr>
+    <tr><td><code>beat.registerHit(entityId, strict)</code></td><td class="desc">Record a player hit. Returns the new combo count (not a score delta). With <code>strict=true</code>, a hit outside the on-beat window resets combo and returns 0.</td></tr>
+    <tr><td><code>beat.getCombo(entityId)</code></td><td class="desc">Current hit-combo count.</td></tr>
+    <tr><td><code>beat.getBestCombo(entityId)</code></td><td class="desc">Best combo this session.</td></tr>
+    <tr><td><code>beat.resetCombo(entityId)</code></td><td class="desc">Reset combo to 0. Returns the previous combo count.</td></tr>
+    <tr><td><code>beat.setCallback(cb)</code></td><td class="desc">Register a JS callback invoked on every beat tick. Signature: <code>function(beatCount, beatTime)</code>.</td></tr>
+    <tr><td><code>beat.setBpm(entityId, newBpm)</code></td><td class="desc">Change BPM mid-song. Recomputes <code>spb</code> and the bounds.</td></tr>
+    <tr><td><code>beat.playSound(entityId, wavIndex)</code></td><td class="desc">Play a one-shot metronome tick through the mixer.</td></tr>
+</table>
+
+<h2 id="api-script">Scripting VM (tdscript)</h2>
 <p>
-    The engine ships with a custom Lua-like bytecode interpreter (3,075 LOC of C++).
+    The engine ships with a custom Lua-like bytecode interpreter (~3,100 LOC of C++).
     Scripts are compiled at runtime from source strings and can call back into C++ functions.
+    See <code>src/scripting/tdscript/</code> for the lexer + parser + codegen + VM.
 </p>
 <pre><span class="kw">const</span> src = <span class="str">`
   fn spawn_burst(x, y) {
@@ -608,20 +695,74 @@ $ cmake -B build -S . -DTD_BUILD_EDITOR=ON &amp;&amp; cmake --build build</pre>
   fn toggle_gravity() { gravity = !gravity }
 `</span>;
 
-<span class="kw">const</span> handle = <span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">load</span>(src);
-<span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">call</span>(handle, <span class="str">"spawn_burst"</span>, <span class="num">100</span>, <span class="num">200</span>);
+<span class="kw">const</span> handle = <span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">load</span>(src, <span class="str">"effects"</span>);
+
+<span class="com">// args may be a plain JS array OR a JSON-encoded string. The C side</span>
+<span class="com">// expects a JSON array string; the wrapper auto-stringifies for you.</span>
+<span class="kw">const</span> result = <span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">call</span>(handle, <span class="str">"spawn_burst"</span>, [<span class="num">100</span>, <span class="num">200</span>]);
+
 <span class="fn">TDEngine</span>.<span class="prop">script</span>.<span class="fn">unload</span>(handle);</pre>
+<table class="td-api-table">
+    <tr><th>Function</th><th class="desc">Description</th></tr>
+    <tr><td><code>script.load(src, name?)</code></td><td class="desc">Compile a tdscript source string. Returns a numeric handle.</td></tr>
+    <tr><td><code>script.call(handle, fnName, args?)</code></td><td class="desc">Call a function inside the loaded script. <code>args</code> is a JS array or JSON string. Returns the function's return value as a string.</td></tr>
+    <tr><td><code>script.unload(handle)</code></td><td class="desc">Free the script's VM state.</td></tr>
+</table>
 
 <h2 id="api-i18n">i18n</h2>
 <p>
-    Load locale tables (JSON-like) into the engine, then look up strings by key. Arabic flips to RTL automatically.
+    Load locale tables into the engine, then look up strings by key. Arabic flips to RTL automatically.
+    <code>load()</code> accepts either a plain JS object (auto-stringified) or a JSON-encoded string
+    (matches the C API directly).
 </p>
-<pre><span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">load</span>(<span class="str">'en'</span>, { play: <span class="str">'Play'</span>, quit: <span class="str">'Quit'</span> });
-<span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">load</span>(<span class="str">'ar'</span>, { play: <span class="str">'العب'</span>, quit: <span class="str">'اخرج'</span> });
+<pre><span class="com">// Pass a plain object — the wrapper JSON-stringifies it for the C side.</span>
+<span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">load</span>(<span class="str">'en'</span>, { play: <span class="str">'Play'</span>, quit: <span class="str">'Quit'</span> });
+<span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">load</span>(<span class="str">'ar'</span>, { play: <span class="str">'العب'</span>,  quit: <span class="str">'اخرج'</span> });
 <span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">setLocale</span>(<span class="str">'ar'</span>);
 
-<span class="kw">const</span> s = <span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">t</span>(<span class="str">'play'</span>);  <span class="com">// 'العب'</span>
+<span class="kw">const</span> s = <span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">t</span>(<span class="str">'play'</span>);   <span class="com">// 'العب'</span>
 <span class="kw">const</span> rtl = <span class="fn">TDEngine</span>.<span class="prop">i18n</span>.<span class="fn">isRtl</span>();       <span class="com">// true</span></pre>
+
+<h2 id="api-physics">3D Physics</h2>
+<p>
+    The <code>TDEngine.physics</code> namespace exposes a full 3D rigid body simulator (spheres, boxes,
+    capsules, convex hulls) with sequential-impulse solver, Coulomb friction, restitution, sleeping,
+    and constraints (distance, hinge). Backed by <code>src/physics/physics_world_3d.{h,cpp}</code>,
+    exposed via the <code>td_physics_*</code> C bridge.
+</p>
+<pre><span class="com">// Create a world with gravity (here: -9.81 on Y).</span>
+<span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">init</span>(<span class="num">0</span>, <span class="num">-9.81</span>, <span class="num">0</span>);
+
+<span class="com">// Static floor (mass=0, isStatic=true).</span>
+<span class="kw">const</span> floor = <span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">addBody</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">-5</span>, <span class="num">0</span>, <span class="kw">true</span>);
+<span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">setBoxCollider</span>(floor, <span class="num">10</span>, <span class="num">1</span>, <span class="num">10</span>);
+
+<span class="com">// Dynamic ball.</span>
+<span class="kw">const</span> ball = <span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">addBody</span>(<span class="num">1</span>, <span class="num">0</span>, <span class="num">5</span>, <span class="num">0</span>, <span class="kw">false</span>);
+<span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">setSphereCollider</span>(ball, <span class="num">0.5</span>);
+<span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">setRestitution</span>(ball, <span class="num">0.8</span>);
+
+<span class="com">// Each frame: step the world + read back positions.</span>
+<span class="kw">function</span> <span class="fn">gameLoop</span>(dt) {
+  <span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">step</span>(dt);
+  <span class="kw">const</span> { x, y, z } = <span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">getPosition</span>(ball);
+  <span class="kw">const</span> orient = <span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">getOrientation</span>(ball); <span class="com">// quaternion {x,y,z,w}</span>
+}
+
+<span class="com">// Raycast: returns { bodyId, point, normal } or null.</span>
+<span class="kw">const</span> hit = <span class="fn">TDEngine</span>.<span class="prop">physics</span>.<span class="fn">raycast</span>(<span class="num">0</span>,<span class="num">5</span>,<span class="num">0</span>, <span class="num">0</span>,<span class="num">-1</span>,<span class="num">0</span>, <span class="num">100</span>);</pre>
+<p>The full surface (25+ methods):</p>
+<table class="td-api-table">
+    <tr><th>Group</th><th class="desc">Methods</th></tr>
+    <tr><td><b>World</b></td><td class="desc"><code>init(gravityX, gravityY, gravityZ)</code>, <code>shutdown()</code>, <code>step(dt)</code></td></tr>
+    <tr><td><b>Bodies</b></td><td class="desc"><code>addBody(mass, x, y, z, isStatic)</code>, <code>removeBody(bodyId)</code>, <code>bodyCount()</code></td></tr>
+    <tr><td><b>Colliders</b></td><td class="desc"><code>setSphereCollider(bodyId, radius, offX?, offY?, offZ?)</code>, <code>setBoxCollider(bodyId, hx, hy, hz, offX?, offY?, offZ?)</code>, <code>setCapsuleCollider(bodyId, radius, height, axis?, offX?, offY?, offZ?)</code></td></tr>
+    <tr><td><b>Body state</b></td><td class="desc"><code>setPosition</code>, <code>setVelocity</code>, <code>getPosition</code>, <code>getVelocity</code>, <code>getOrientation</code></td></tr>
+    <tr><td><b>Forces</b></td><td class="desc"><code>applyForce(bodyId, fx, fy, fz)</code>, <code>applyImpulse(bodyId, ix, iy, iz)</code>, <code>applyTorque(bodyId, tx, ty, tz)</code></td></tr>
+    <tr><td><b>Material</b></td><td class="desc"><code>setRestitution(bodyId, e)</code>, <code>setFriction(bodyId, f)</code>, <code>setGravityScale(bodyId, s)</code>, <code>setUseGravity(bodyId, use)</code></td></tr>
+    <tr><td><b>Constraints</b></td><td class="desc"><code>addDistanceConstraint(bodyA, bodyB, targetDistance)</code>, <code>addHingeConstraint(bodyA, bodyB, axisX, axisY, axisZ)</code></td></tr>
+    <tr><td><b>Queries</b></td><td class="desc"><code>contactCount()</code>, <code>raycast(ox,oy,oz, dx,dy,dz, maxDist)</code> &rarr; <code>{ bodyId, point, normal }</code> or <code>null</code></td></tr>
+</table>
 
 <h2 id="api-net">Networking</h2>
 <p>
@@ -707,6 +848,118 @@ handle.<span class="fn">mark</span>(<span class="str">'scene-load'</span>);
 
 handle.<span class="fn">unmount</span>();</pre>
 
+<!-- ============ Game Kit (web-dev workflow) ============ -->
+<h2 id="api-assets">Game Kit &mdash; TDAssets (asset pipeline)</h2>
+<p>
+    <code>web/game_kit.js</code> exposes four namespaces aimed at web-development workflows:
+    <code>TDAssets</code> (this section), <code>TDCDN</code>, <code>TDRest</code>, <code>TDServer</code>.
+    All are pure-JS IIFEs with zero external dependencies; loaded additively in <code>web/index.html</code>.
+    See <a href="https://github.com/hacvilke/td/blob/main/docs/GAME_KIT.md" target="_blank" rel="noopener"><b>docs/GAME_KIT.md</b></a>
+    for the full reference.
+</p>
+<p>
+    <code>TDAssets</code> wraps <code>fetch()</code> with retry, caching, and the decode/upload helpers
+    you need to turn a URL into an in-engine Texture or an <code>AudioBuffer</code> ready for Web Audio.
+    Works with any CORS-enabled URL: your own CDN, GitHub raw, Openverse, Freesound (via the asset
+    proxy), Unsplash (via the asset proxy), DiceBear, PokéAPI, etc.
+</p>
+<pre><span class="com">// One-shot: fetch URL → decode → upload → return texture ID.</span>
+<span class="kw">const</span> texId = <span class="kw">await</span> <span class="fn">TDAssets</span>.<span class="fn">loadTexture</span>(<span class="str">'https://cdn.example.com/ship.png'</span>);
+
+<span class="com">// Fetch + decode audio into an AudioBuffer.</span>
+<span class="kw">const</span> audioBuf = <span class="kw">await</span> <span class="fn">TDAssets</span>.<span class="fn">loadAudio</span>(<span class="str">'https://cdn.example.com/jump.wav'</span>);
+
+<span class="com">// Low-level: fetch bytes / text / parsed JSON.</span>
+<span class="kw">const</span> bytes = <span class="kw">await</span> <span class="fn">TDAssets</span>.<span class="fn">fetchBytes</span>(url);
+<span class="kw">const</span> text  = <span class="kw">await</span> <span class="fn">TDAssets</span>.<span class="fn">fetchText</span>(url);
+<span class="kw">const</span> cfg   = <span class="kw">await</span> <span class="fn">TDAssets</span>.<span class="fn">fetchJson</span>(url);  <span class="com">// parsed</span>
+
+<span class="com">// Cache management (shared with TDRest).</span>
+<span class="fn">TDAssets</span>.<span class="fn">cacheClear</span>();
+<span class="fn">TDAssets</span>.<span class="fn">cacheSize</span>();   <span class="com">// total bytes tracked</span>
+<span class="fn">TDAssets</span>.<span class="fn">cacheCount</span>();  <span class="com">// entry count</span></pre>
+
+<h2 id="api-cdn">Game Kit &mdash; TDCDN (multi-origin routing)</h2>
+<p>
+    Define a list of CDN prefixes for your game's assets; the engine resolves each logical path
+    against them in weight order until one returns 200. Same API in dev (local files) and prod (CDN).
+    Failover is automatic: 5xx / network errors mark an origin unhealthy for 30 seconds, then it's
+    retried.
+</p>
+<pre><span class="com">// Configure origins (trailing slash auto-added).</span>
+<span class="fn">TDCDN</span>.<span class="fn">addOrigin</span>(<span class="str">'https://cdn.primary.com/v1'</span>,   { weight: <span class="num">10</span>, label: <span class="str">'primary'</span>   });
+<span class="fn">TDCDN</span>.<span class="fn">addOrigin</span>(<span class="str">'https://cdn.secondary.com/v1'</span>, { weight: <span class="num">5</span>,  label: <span class="str">'secondary'</span> });
+<span class="fn">TDCDN</span>.<span class="fn">addOrigin</span>(<span class="str">'/assets'</span>,                       { weight: <span class="num">1</span>,  label: <span class="str">'local'</span>     });
+
+<span class="com">// Resolve a logical path against the origin list.</span>
+<span class="kw">const</span> url = <span class="kw">await</span> <span class="fn">TDCDN</span>.<span class="fn">resolve</span>(<span class="str">'sprites/ship.png'</span>);
+<span class="com">// → 'https://cdn.primary.com/v1/sprites/ship.png'</span>
+
+<span class="com">// Or fetch directly (resolve + fetch in one call).</span>
+<span class="kw">const</span> bytes = <span class="kw">await</span> <span class="fn">TDCDN</span>.<span class="fn">fetchBytes</span>(<span class="str">'sprites/ship.png'</span>);
+<span class="kw">const</span> cfg   = <span class="kw">await</span> <span class="fn">TDCDN</span>.<span class="fn">fetchJson</span>(<span class="str">'config.json'</span>);</pre>
+
+<h2 id="api-rest">Game Kit &mdash; TDRest (REST helper)</h2>
+<p>
+    Wraps <code>fetch()</code> with timeout, retry, default headers (for auth tokens), JSON encoding,
+    and per-host rate-limit tracking (honoring <code>Retry-After</code>). Use it for any HTTP API
+    call your game makes &mdash; the <code>docs/PUBLIC_APIS.md</code> survey lists 25+ free,
+    CORS-enabled APIs that work directly from the browser.
+</p>
+<pre><span class="com">// Configure defaults.</span>
+<span class="fn">TDRest</span>.<span class="fn">setDefaultHeader</span>(<span class="str">'Authorization'</span>, <span class="str">'Bearer my-token'</span>);
+<span class="fn">TDRest</span>.<span class="fn">setDefaultTimeout</span>(<span class="num">10_000</span>);
+<span class="fn">TDRest</span>.<span class="fn">setDefaultRetries</span>(<span class="num">3</span>);
+
+<span class="com">// Convenience methods (parsed JSON).</span>
+<span class="kw">const</span> data    = <span class="kw">await</span> <span class="fn">TDRest</span>.<span class="fn">getJson</span>(<span class="str">'https://api.example.com/v1/items'</span>);
+<span class="kw">const</span> created = <span class="kw">await</span> <span class="fn">TDRest</span>.<span class="fn">postJson</span>(url, { name: <span class="str">'Sword'</span>, price: <span class="num">100</span> });
+<span class="kw">const</span> updated = <span class="kw">await</span> <span class="fn">TDRest</span>.<span class="fn">putJson</span>(url, body);
+<span class="kw">await</span> <span class="fn">TDRest</span>.<span class="fn">del</span>(url);
+
+<span class="com">// Rate-limit aware: 429 with Retry-After is tracked per-host.</span>
+<span class="kw">try</span> {
+  <span class="kw">await</span> <span class="fn">TDRest</span>.<span class="fn">getJson</span>(url);
+} <span class="kw">catch</span> (e) {
+  <span class="kw">if</span> (e.rateLimited) <span class="fn">showUserMessage</span>(<span class="str">'Rate-limited. Try again in '</span> + <span class="fn">Math</span>.<span class="fn">ceil</span>(e.retryAfterMs / <span class="num">1000</span>) + <span class="str">'s'</span>);
+}</pre>
+
+<h2 id="api-tdserver">Game Kit &mdash; TDServer (server hooks)</h2>
+<p>
+    Sits on top of <code>TDNet.Socket</code> (the WebSocket transport) and adds the higher-level
+    communication patterns real games need. Pair with the standalone server
+    (<a href="#guide-server">see §Standalone server below</a>) for a full client-server stack.
+</p>
+<pre><span class="com">// Connect to your self-hosted server.</span>
+<span class="kw">const</span> playerId = <span class="kw">await</span> <span class="fn">TDServer</span>.<span class="fn">connect</span>(<span class="str">'wss://your.server/td'</span>, {
+  authToken: sessionToken,
+  roomId:    <span class="str">'arena-1'</span>,
+});
+
+<span class="com">// Channels (pub/sub per topic, routed per room).</span>
+<span class="kw">const</span> unsub = <span class="fn">TDServer</span>.<span class="fn">subscribe</span>(<span class="str">'explosions'</span>, ({ payload, from }) =&gt; {
+  <span class="fn">spawnExplosion</span>(payload.x, payload.y, from);
+});
+<span class="fn">TDServer</span>.<span class="fn">publish</span>(<span class="str">'explosions'</span>, { x: <span class="num">100</span>, y: <span class="num">200</span> });
+<span class="kw">await</span> <span class="fn">unsub</span>();  <span class="com">// stop listening</span>
+
+<span class="com">// RPC with timeout.</span>
+<span class="kw">const</span> leaderboard = <span class="kw">await</span> <span class="fn">TDServer</span>.<span class="fn">callRemote</span>(<span class="str">'getLeaderboard'</span>,
+                                              { game: <span class="str">'pong'</span> },
+                                              { timeoutMs: <span class="num">5000</span> });
+
+<span class="com">// Presence (who's online in this room).</span>
+<span class="kw">const</span> peers = <span class="fn">TDServer</span>.<span class="fn">peers</span>();
+<span class="fn">TDServer</span>.<span class="fn">peerCount</span>();
+
+<span class="com">// Save sync (cross-device roaming via the server).</span>
+<span class="kw">await</span> <span class="fn">TDServer</span>.<span class="fn">pushSave</span>(<span class="str">'checkpoint-1'</span>);
+<span class="kw">await</span> <span class="fn">TDServer</span>.<span class="fn">pullSave</span>(<span class="str">'checkpoint-1'</span>);
+<span class="kw">const</span> saves = <span class="kw">await</span> <span class="fn">TDServer</span>.<span class="fn">listSaves</span>();
+
+<span class="com">// Register a hook the server can invoke (server → client RPC).</span>
+<span class="fn">TDServer</span>.<span class="fn">registerHook</span>(<span class="str">'isReady'</span>, () =&gt; loaded &amp;&amp; playerEntity != <span class="kw">null</span>);</pre>
+
 <!-- ============ Guides ============ -->
 <h2 id="guide-selfhost">Self-hosting</h2>
 <p>
@@ -726,6 +979,60 @@ handle.<span class="fn">unmount</span>();</pre>
     lets you mirror the engine on a host your users can actually reach &mdash; without forking the code or
     maintaining a build pipeline.
 </div>
+
+<h2 id="guide-server">Standalone self-hosted server (custom game API)</h2>
+<p>
+    For games that need real multiplayer, save roaming, or authenticated API
+    proxying, the engine ships a complete Node.js server at
+    <code>tools/server/td_server.js</code>. It implements the wire protocol that
+    <code>TDServer</code> (above) speaks, plus everything you need to ship a
+    production game server:
+</p>
+<ul>
+    <li><b>WebSocket relay</b> &mdash; rooms, presence, channel pub/sub, RPC dispatch, custom client hooks.</li>
+    <li><b>HTTP asset proxy</b> &mdash; protects API keys for Freesound, Unsplash, etc. by keeping the token server-side.</li>
+    <li><b>File-backed save roaming</b> &mdash; players can sign in from any browser and pull their saves.</li>
+    <li><b>Room management</b> &mdash; create / list / join rooms; max-players cap; auto-vacuum when empty.</li>
+    <li><b>Static file server</b> &mdash; serve your game's <code>index.html</code> + assets from one process.</li>
+    <li><b>Game-defined RPC handlers</b> &mdash; register your own methods (e.g. <code>submitScore</code>) in a custom bootstrap script.</li>
+</ul>
+<p>
+    The server has one npm dependency: <code>ws</code> (already in the engine's <code>package.json</code>).
+</p>
+<pre><span class="com"># Quick start</span>
+$ <span class="kw">npm</span> install                       <span class="com"># installs `ws`</span>
+$ <span class="kw">mkdir</span> -p public &amp;&amp; <span class="kw">cp</span> examples/web-game/index.html public/
+$ <span class="kw">node</span> tools/server/td_server.js \
+    --port 8080 \
+    --static ./public \
+    --saves  ./saves \
+    --secrets ./secrets.json</pre>
+<p>
+    Open <code>http://localhost:8080/</code> in your browser. The server logs:
+</p>
+<pre>[td_server] listening on http://localhost:8080
+[td_server] serving static from: ./public
+[td_server] saves stored in: ./saves
+[td_server] proxy secrets available for: freesound, unsplash</pre>
+<p>
+    To register your own RPC handlers (the &quot;custom game API&quot; part), write a small bootstrap
+    script that calls <code>startServer</code> and then <code>server.registerRpc(...)</code>:
+</p>
+<pre><span class="com">// server-bootstrap.js</span>
+<span class="kw">const</span> { startServer } = <span class="fn">require</span>(<span class="str">'./tools/server/td_server.js'</span>);
+<span class="kw">const</span> { server } = <span class="fn">startServer</span>({ port: <span class="num">8080</span>, savesDir: <span class="str">'./saves'</span> });
+
+<span class="com">// Game-defined RPC handler.</span>
+server.<span class="fn">registerRpc</span>(<span class="str">'submitScore'</span>, (args, ctx) =&gt; {
+  <span class="kw">const</span> [score, level] = args;
+  <span class="kw">console</span>.<span class="fn">log</span>(<span class="str">`Player </span>${ctx.peerId}<span class="str"> scored </span>${score}<span class="str">`</span>);
+  <span class="kw">return</span> { ok: <span class="kw">true</span>, rank: <span class="num">42</span> };
+});</pre>
+<p>
+    Then run <code>node server-bootstrap.js</code> instead of <code>td_server.js</code> directly.
+    See <a href="https://github.com/hacvilke/td/blob/main/docs/SELF_HOSTED_SERVER.md" target="_blank" rel="noopener"><b>docs/SELF_HOSTED_SERVER.md</b></a>
+    for the full reference (config file format, wire protocol, production deployment, Docker, etc.).
+</p>
 
 <h2 id="guide-multiplayer">Multiplayer</h2>
 <p>
@@ -791,8 +1098,8 @@ window.__TD_ERROR_ENDPOINT__ = <span class="str">'https://your.server/errors'</s
 <!-- ============ Reference ============ -->
 <h2 id="ref-modules">Module list</h2>
 <p>
-    10 web modules, all pure-JS IIFEs, no external dependencies. Loaded additively &mdash;
-    the engine boots even if every module is missing.
+    11 web modules + 1 standalone server, all pure-JS IIFEs, no external dependencies.
+    Loaded additively &mdash; the engine boots even if every optional module is missing.
 </p>
 <div class="td-module-grid">
     <div class="m">
@@ -802,7 +1109,7 @@ window.__TD_ERROR_ENDPOINT__ = <span class="str">'https://your.server/errors'</s
     </div>
     <div class="m">
         <h4>td_api.js</h4>
-        <p>The TDEngine.* namespace. Lifecycle, ecs, input, beat, script, i18n, audio, touch, gamepad.</p>
+        <p>The TDEngine.* namespace. Lifecycle, ecs, input, beat, script, i18n, audio, touch, gamepad, shaderGraph, physics.</p>
         <a class="src" href="https://github.com/hacvilke/td/blob/main/web/td_api.js" target="_blank" rel="noopener">view source &rarr;</a>
     </div>
     <div class="m">
@@ -845,11 +1152,21 @@ window.__TD_ERROR_ENDPOINT__ = <span class="str">'https://your.server/errors'</s
         <p>Save/load with game-registered serializers. Named slots. Autosave. JSON export/import.</p>
         <a class="src" href="https://github.com/hacvilke/td/blob/main/web/persistence.js" target="_blank" rel="noopener">view source &rarr;</a>
     </div>
+    <div class="m">
+        <h4>game_kit.js <span class="td-new">NEW</span></h4>
+        <p>Web-dev workflow: TDAssets (asset pipeline), TDCDN (multi-origin routing), TDRest (REST helper), TDServer (server hooks). See <a href="#api-assets">Game Kit sections</a>.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/web/game_kit.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
+    <div class="m">
+        <h4>td_server.js <span class="td-new">NEW</span></h4>
+        <p>Standalone self-hosted Node.js server. WebSocket relay + asset proxy + save roaming + game RPCs. See <a href="#guide-server">Standalone server guide</a>.</p>
+        <a class="src" href="https://github.com/hacvilke/td/blob/main/tools/server/td_server.js" target="_blank" rel="noopener">view source &rarr;</a>
+    </div>
 </div>
 
 <h2 id="ref-tests">Test suite</h2>
 <p>
-    655 tests across 5 web test suites + 9 C++ test executables. All run on every push via GitHub Actions.
+    735 tests across 7 web test suites + 9 C++ test executables. All run on every push via GitHub Actions.
 </p>
 <table class="td-api-table">
     <tr><th>Suite</th><th class="desc">Tests</th><th class="desc">Covers</th></tr>
@@ -858,7 +1175,9 @@ window.__TD_ERROR_ENDPOINT__ = <span class="str">'https://your.server/errors'</s
     <tr><td><code>test_editor_modules.js</code></td><td>78</td><td class="desc">Inspector, Profiler, ErrorBoundary (snapshot, mount/unmount, report)</td></tr>
     <tr><td><code>test_persistence.js</code></td><td>80</td><td class="desc">RegisterSerializer, save/load, list/delete, export/import, autosave, errors</td></tr>
     <tr><td><code>test_net_peer.js</code></td><td>41</td><td class="desc">TDNet.Peer discovery, broadcast, directed msg, RTT, stale sweep, 3-peer mesh</td></tr>
-    <tr><td>C++ tests</td><td>348</td><td class="desc">math, ecs, physics, world_init, slot_leak, ui, voxel, net, character_controller</td></tr>
+    <tr><td><code>test_game_kit.js</code> <span class="td-new">NEW</span></td><td>32</td><td class="desc">TDAssets (fetch/decode/cache), TDCDN (origins, failover, weight), TDRest (headers, retry, rate-limit), TDServer (hooks, snapshot)</td></tr>
+    <tr><td><code>test_td_server.js</code> <span class="td-new">NEW</span></td><td>48</td><td class="desc">Standalone server: config parsing, peer/room lifecycle, channel pub/sub, RPC dispatch, save sync, client hooks, presence, real-WebSocket E2E</td></tr>
+    <tr><td>C++ tests</td><td>348</td><td class="desc">math, ecs, physics, world_init, slot_leak, ui, voxel, net (incl. 256KB fragmentation fixed), character_controller</td></tr>
 </table>
 
 <h2 id="guide-bundler">EXE bundler (Inno Setup-style installer)</h2>

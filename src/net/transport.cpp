@@ -373,6 +373,7 @@ ReliableChannel::~ReliableChannel() = default;
 void ReliableChannel::reset() {
     m_sendNext = 0;
     m_unacked.clear();
+    m_pending.clear();
     m_rttMs = 200.0f;
     m_rtoMs = 200;
     m_recvContiguous = 0xFFFF;
@@ -420,24 +421,44 @@ bool ReliableChannel::send(Socket& sock, const Endpoint& ep, ReliabilityMode mod
     }
     int totalLen = NET_PACKET_HEADER_SIZE + len;
 
-    // For reliable packets, stash a copy in the unacked queue.
+    // For reliable packets, stash a copy for retransmit. The send window
+    // bounds the in-flight (transmitted, unacked) set; if it's full we
+    // queue the packet in m_pending and let update() drain it as ACKs
+    // arrive. This is proper backpressure — previously the code dropped
+    // the oldest unacked packet (which had already been transmitted),
+    // making it impossible to retransmit if it was lost on the wire.
     if (flags & PacketFlag::RELIABLE) {
-        if (static_cast<int>(m_unacked.size()) >= NET_SEND_WINDOW) {
-            // Window full — drop oldest (caller should retry).
-            // For tests this is fine because we poll aggressively.
-            m_unacked.erase(m_unacked.begin());
+        // Bound the pending queue to prevent unbounded memory growth under
+        // sustained oversend. The cap is large enough for a 256 KB
+        // fragmented message (~190 fragments) plus headroom.
+        if (static_cast<int>(m_unacked.size() + m_pending.size()) >=
+            NET_MAX_PENDING) {
+            return false;  // hard backpressure — caller must retry
         }
-        UnackedPacket u;
-        u.seq          = seq;
-        u.flags        = flags;
-        u.firstSentMs  = monotonicNowMs();
-        u.lastSentMs   = u.firstSentMs;
-        u.data.assign(buf, buf + totalLen);
-        m_unacked.push_back(std::move(u));
-    }
 
-    int sent = sock.sendTo(ep, buf, totalLen);
-    (void)sent;  // even if sendTo fails (e.g. transient), reliable will retransmit.
+        UnackedPacket u;
+        u.seq   = seq;
+        u.flags = flags;
+        u.data.assign(buf, buf + totalLen);
+
+        if (static_cast<int>(m_unacked.size()) < NET_SEND_WINDOW) {
+            // Window has space — transmit immediately and stash for retransmit.
+            u.firstSentMs = monotonicNowMs();
+            u.lastSentMs  = u.firstSentMs;
+            sock.sendTo(ep, u.data.data(), static_cast<int>(u.data.size()));
+            m_unacked.push_back(std::move(u));
+        } else {
+            // Window full — queue for later transmission. firstSentMs = 0
+            // signals "not yet on the wire"; update() will set it when it
+            // drains the pending queue.
+            u.firstSentMs = 0;
+            u.lastSentMs  = 0;
+            m_pending.push_back(std::move(u));
+        }
+    } else {
+        // Unreliable: transmit immediately, no queue, no retransmit.
+        sock.sendTo(ep, buf, totalLen);
+    }
     return true;
 }
 
@@ -550,6 +571,35 @@ void ReliableChannel::markReceived(Seq s) {
     // Update the receiver's view: m_recvContiguous is the highest seq such
     // that all seqs <= it have been received. The bitmap covers the 32 seqs
     // after that.
+    //
+    // Sentinel handling: m_recvContiguous starts at 0xFFFF meaning "nothing
+    // received yet". The generic seqLessThan check below would interpret
+    // s=0 as "older than 0xFFFF" (since 0 < 0xFFFF in normal arithmetic)
+    // and return early — which would leave m_recvContiguous stuck at the
+    // sentinel forever, making every ACK a no-op (ackSeq=0xFFFF means
+    // "no ack info" on the wire). The sender would never see its window
+    // open up and large fragmented messages would never drain.
+    if (m_recvContiguous == 0xFFFF) {
+        // First packet ever received on this channel. Seed the contiguous
+        // cursor so that s becomes "received" — set the cursor to s, then
+        // fall through so the dedup bitmap also gets seeded.
+        m_recvContiguous = s;
+        // No bitmap math needed: the cursor == s means s is accounted for.
+        // Skip ahead to dedup update.
+        if (m_dedupBase == 0xFFFF && m_dedupBitmap == 0) {
+            m_dedupBase = s;
+            m_dedupBitmap = 1u;
+        } else {
+            int ddiff = seqForwardDistance(m_dedupBase, s);
+            if (ddiff >= 0 && ddiff < 32) {
+                m_dedupBitmap |= (1u << ddiff);
+            } else if (ddiff >= 32) {
+                m_dedupBase = s;
+                m_dedupBitmap = 1u;
+            }
+        }
+        return;
+    }
     if (s == m_recvContiguous) {
         // shouldn't happen (already received), ignore.
         return;
@@ -643,6 +693,18 @@ void ReliableChannel::updateRto(uint32_t rttSample) {
 }
 
 void ReliableChannel::update(Socket& sock, const Endpoint& ep, uint32_t nowMs) {
+    // Drain the pending (backpressure) queue: as ACKs free up window slots,
+    // transmit queued packets and promote them into m_unacked.
+    while (!m_pending.empty() &&
+           static_cast<int>(m_unacked.size()) < NET_SEND_WINDOW) {
+        UnackedPacket& u = m_pending.front();
+        u.firstSentMs = nowMs;
+        u.lastSentMs  = nowMs;
+        sock.sendTo(ep, u.data.data(), static_cast<int>(u.data.size()));
+        m_unacked.push_back(std::move(u));
+        m_pending.pop_front();
+    }
+
     // Retransmit timed-out packets.
     for (auto& u : m_unacked) {
         uint32_t elapsed = nowMs - u.lastSentMs;

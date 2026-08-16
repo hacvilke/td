@@ -24,6 +24,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -228,7 +229,24 @@ constexpr int NET_PACKET_HEADER_SIZE = 9;
 constexpr int NET_FRAGMENT_HEADER_SIZE = 8;
 
 // Maximum number of unacked packets in flight per channel (send window).
+// This is the ARQ sliding-window limit: the sender will not have more than
+// this many packets "on the wire" awaiting ACK at any one time. It bounds
+// memory use per connection and matches the 32-bit selective-ACK bitmap
+// carried in every packet header.
 constexpr int NET_SEND_WINDOW = 32;
+
+// Maximum number of reliable packets queued for *future* transmission when
+// the send window is full. Without this backpressure, the sender would
+// either (a) drop unacked packets (losing them forever — they've already
+// been transmitted but cannot be retransmitted if lost) or (b) grow its
+// unacked queue without bound. The pending queue decouples the application
+// call rate from the wire rate: a 256 KB message bursts ~190 fragments
+// synchronously, the first 32 go out immediately, the rest wait here and
+// are drained by ReliableChannel::update() as ACKs free up window slots.
+//
+// 2048 packets × ~1400 bytes ≈ 2.7 MB per connection — enough for a 256 KB
+// fragmented message (190 fragments) plus headroom, bounded for safety.
+constexpr int NET_MAX_PENDING = 2048;
 
 // Sequence number type. uint16 wraps every 65536 packets; we use modulo
 // arithmetic + a wrap-aware comparison (seqLessThan / seqGreaterThan).
@@ -325,6 +343,7 @@ public:
 
     // Stats for the connection layer.
     int  unackedCount() const { return static_cast<int>(m_unacked.size()); }
+    int  pendingCount() const { return static_cast<int>(m_pending.size()); }
     bool hasPendingAck() const { return m_pendingAck; }
     Seq  nextSendSeq() const { return m_sendNext; }
     Seq  lastRecvSeq() const { return m_recvContiguous; }
@@ -339,7 +358,8 @@ private:
         uint32_t   lastSentMs;
         std::vector<uint8_t> data; // includes header
     };
-    std::vector<UnackedPacket> m_unacked;
+    std::vector<UnackedPacket> m_unacked;   // transmitted, awaiting ACK
+    std::deque<UnackedPacket>  m_pending;   // queued, not yet transmitted (backpressure)
     // RTT estimation (EWMA). Initial 200ms, min 50ms.
     float m_rttMs = 200.0f;
     // Retransmit timeout (RTO), derived from RTT + margin.

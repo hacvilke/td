@@ -312,10 +312,16 @@ learn the engine:
 1. **Start from the quickstart in `docs.html`** — it shows the minimal boot +
    ECS + input + game loop pattern in ~20 lines.
 2. **Read the API reference sections** in `docs.html` (ECS, Input, Beat System,
-   Scripting VM, i18n, Networking, Persistence, Inspector, Profiler).
+   Scripting VM, i18n, 3D Physics, Networking, Persistence, Inspector,
+   Profiler, plus the new **Game Kit** sections: TDAssets, TDCDN, TDRest,
+   TDServer).
 3. **Write your own game** in a folder you own, with the engine as a dependency.
    The planned EXE bundler (roadmap) will wrap your finished JS game into a
    single Windows `.exe` for Steam / itch.io distribution.
+4. **For multiplayer + asset pipelines**: read `docs/GAME_KIT.md` and
+   `docs/SELF_HOSTED_SERVER.md`. The standalone server
+   (`tools/server/td_server.js`) gives you rooms, presence, RPC dispatch,
+   save roaming, and an authenticated asset proxy in one `node` command.
 
 ---
 

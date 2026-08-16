@@ -107,10 +107,88 @@ TDEngine.script.call(handle, 'on_update', '[0.016]');
 | `TDErrorBoundary` | install | Friendly crash card with stack trace |
 | `TDScriptRuntime` | (auto-loaded by `tdscript_runtime.js`) | Compiled TDScript server-side runtime |
 | `TDClientBootstrap` | bootstrap | Auto-connect to the project's game-net server |
+| `TDAssets` | fetchBytes, fetchText, fetchJson, decodeImage, decodeAudio, uploadTexture, loadTexture, loadAudio, cacheClear/Size/Count | Free asset pipeline — fetch + decode + upload textures/audio from any URL (CDN, Openverse, Freesound proxy, DiceBear, etc.) |
+| `TDCDN` | addOrigin, removeOrigin, listOrigins, resolve, fetchPath/Bytes/Text/Json | Multi-origin CDN routing with weight-based ordering + automatic failover |
+| `TDRest` | setDefaultHeader/Timeout/Retries, request, getJson, postJson, putJson, del, isRateLimited, clearRateLimits | REST helper with retry, timeout, auth, and per-host rate-limit tracking |
+| `TDServer` | connect, disconnect, subscribe, publish, callRemote, subscribeStream, peers, peerCount, pushSave, pullSave, listSaves, registerHook, snapshot | High-level client-server hooks (channels, RPC, SSE fallback, presence, save sync, custom client hooks). Requires `game_kit.js` after `net_websocket.js`. Pair with `tools/server/td_server.js`. |
 
 The legacy `TDBridge` global still works for backwards compatibility —
 direct access logs a one-time deprecation warning pointing users to the
 new `TDEngine.*` namespace.
+
+### Game Kit (web-dev workflow) — NEW
+
+`web/game_kit.js` exposes four browser-side namespaces that broaden TD Engine's
+public API past the in-engine ECS / rendering / networking core. They are aimed
+squarely at **web-development workflows**: fetching assets from any URL, routing
+them through CDN prefixes with failover, calling REST APIs with retry + auth,
+and talking to a self-hosted server through high-level channels, RPCs, presence,
+and save sync. See `docs/GAME_KIT.md` for the full reference.
+
+```html
+<script src="js_bridge.js"></script>
+<script src="td_api.js"></script>
+<script src="net_websocket.js"></script>
+<script src="game_kit.js"></script>      <!-- TDAssets, TDCDN, TDRest, TDServer -->
+```
+
+```javascript
+// Configure CDN routing (production CDN + local fallback).
+TDCDN.addOrigin('https://cdn.mygame.com/v1', { weight: 10 });
+TDCDN.addOrigin('/assets',                    { weight:  1 });
+
+// Load a texture from any URL (caching + decoding + upload).
+const texId = await TDAssets.loadTexture('https://api.dicebear.com/9.x/pixel-art/png?seed=player1');
+
+// Configure REST defaults.
+TDRest.setDefaultHeader('Authorization', `Bearer ${sessionToken}`);
+
+// Connect to your self-hosted server (see tools/server/td_server.js).
+const playerId = await TDServer.connect('wss://mygame.example.com/td', {
+  authToken: sessionToken,
+  roomId:    'arena-1',
+});
+
+// Channels + RPC + save sync + custom client hooks.
+TDServer.subscribe('explosions', ({ payload, from }) => spawnExplosion(payload.x, payload.y, from));
+TDServer.publish('explosions', { x: 100, y: 200 });
+const leaderboard = await TDServer.callRemote('getLeaderboard', { game: 'pong' });
+await TDServer.pushSave('checkpoint-1');
+TDServer.registerHook('isReady', () => loaded);
+```
+
+### Standalone self-hosted server — NEW
+
+For games that need real multiplayer, save roaming, or authenticated API
+proxying, the engine ships a complete Node.js server at
+`tools/server/td_server.js`. It implements the wire protocol that
+`TDServer` speaks, plus everything you need to ship a production game server:
+
+- **WebSocket relay** — rooms, presence, channel pub/sub, RPC dispatch, custom client hooks.
+- **HTTP asset proxy** — protects API keys for Freesound, Unsplash, etc. by keeping the token server-side.
+- **File-backed save roaming** — players can sign in from any browser and pull their saves.
+- **Room management** — create / list / join rooms; max-players cap; auto-vacuum when empty.
+- **Static file server** — serve your game's `index.html` + assets from one process.
+- **Game-defined RPC handlers** — register your own methods (e.g. `submitScore`) in a custom bootstrap script.
+
+See `docs/SELF_HOSTED_SERVER.md` for the full reference (config file format,
+wire protocol, production deployment, Docker, etc.).
+
+```bash
+$ npm install                       # installs `ws`
+$ node tools/server/td_server.js --port 8080 --static ./public --saves ./saves
+```
+
+```javascript
+// server-bootstrap.js — register your own game RPCs
+const { startServer } = require('./tools/server/td_server.js');
+const { server } = startServer({ port: 8080, savesDir: './saves' });
+server.registerRpc('submitScore', (args, ctx) => {
+  const [score, level] = args;
+  console.log(`Player ${ctx.peerId} scored ${score}`);
+  return { ok: true, rank: 42 };
+});
+```
 
 ### Self-hosting the engine on your own server
 
@@ -513,8 +591,11 @@ Three files have small `#ifdef __EMSCRIPTEN__` blocks for platform-specific glue
 - [`docs/MODULARITY_ROADMAP.md`](docs/MODULARITY_ROADMAP.md) — 3-tier roadmap + implementation status table for every engine module.
 - [`docs/RHYTHM_MECHANICS.md`](docs/RHYTHM_MECHANICS.md) — design + implementation of the beat-synced gameplay system.
 - [`docs/PUBLIC_APIS.md`](docs/PUBLIC_APIS.md) — how to consume third-party HTTP APIs from a TD Engine web game.
+- [`docs/GAME_KIT.md`](docs/GAME_KIT.md) — reference for the four web-dev namespaces: `TDAssets` (asset pipeline), `TDCDN` (multi-origin CDN routing), `TDRest` (REST helper), `TDServer` (client-server hooks).
+- [`docs/SELF_HOSTED_SERVER.md`](docs/SELF_HOSTED_SERVER.md) — reference for the standalone Node.js server (`tools/server/td_server.js`): wire protocol, RPC handlers, asset proxy, save roaming, production deployment.
 - [`docs/CREDITS.md`](docs/CREDITS.md) — references and credits for outsourced concepts (comparable-engine documentation, design walkthroughs, tooling).
 - [`web/GETTING_STARTED.md`](web/GETTING_STARTED.md) — 11-section guide for web game developers writing JavaScript against the engine.
+- [`PIPELINE.md`](PIPELINE.md) — bug-fix pipeline; documents every user-facing bug found + the fix applied.
 
 ## License
 

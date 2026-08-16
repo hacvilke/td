@@ -588,14 +588,38 @@ After all fixes:
 - **`td script compile`** on both `examples/3d-showcase/server_main.td` and `tools/cli/templates/minimal/src/server/server_main.td` succeeds (including the previously-crashing `else if` chain).
 - **`tdscript.js --help`** now prints usage (previously silent).
 - **`node tests/tdscript/test_compiler.js`**: 22/22 pass (no regressions).
-- **`make test`** (C++ tests): 87+102+23 = 212 pass, 3 fail (the 3 failures are the pre-existing `test_net` 256KB fragmentation issue, NOT a regression — same 3 failures before and after these changes).
+- **`make test`** (C++ tests): 91+102+23 = **216 pass, 0 fail** (was 212/3 before — the pre-existing `test_net` 256KB fragmentation issue is now **FIXED**, see §7.1 below).
 - **`td help <cmd>`** for all 7 commands now loads and prints help (previously all exited 2 with `Cannot find module '../lib/util'`).
+- **`node tests/test_game_kit.js`**: 32/32 pass (NEW — covers TDAssets, TDCDN, TDRest, TDServer).
+- **`node tests/test_td_server.js`**: 48/48 pass (NEW — covers the standalone server end-to-end via real WebSocket).
+
+### Pre-existing issues — now FIXED in this round
+
+The three issues below were documented as "Pre-existing issues NOT fixed" in the
+previous round. They are now resolved:
+
+- **`test_net` Test 3 (256KB RELIABLE_ORDERED message)** — **FIXED**. See §7.1
+  for the root-cause analysis (sentinel-state bug in `markReceived` plus a
+  drop-oldest-unacked policy that lost packets permanently under heavy
+  fragmentation). Now passes reliably.
+- **`docs.html` API reference** — **REWRITTEN**. The Lifecycle, ECS, Input,
+  Beat, Scripting, and i18n sections now match the actual `web/td_api.js`
+  API surface (correct arg counts, correct types, correct method names). New
+  sections added: 3D Physics, Game Kit (TDAssets, TDCDN, TDRest, TDServer),
+  and the Standalone server guide. See §8 below.
+- **`docs/RHYTHM_MECHANICS.md` stale references** — **FIXED**. Removed
+  references to the removed `web/examples/beat_demo.js`, corrected the file
+  location for `BeatTrackerComponent` (now correctly points to
+  `src/ecs/component.h`), removed fabricated API (`get_seconds_per_beat`,
+  `onBeatNiceness`, `recompute_bounds`, `metroTween`), corrected the return
+  value of `td_beat_register_hit` (returns combo count, not score delta),
+  and replaced the fabricated `TDBridge.onBeat` JS bridge reference with the
+  real `TDEngine.beat.setCallback`. See §7.2 below.
 
 ### Pre-existing issues NOT fixed (documented for transparency)
 
-- **`test_net` Test 3 (256KB RELIABLE_ORDERED message)**: 3 sub-checks fail because the send window (32 packets) is too small for 190 fragments under lossy loopback conditions. This is an internal test-suite issue, not a user-facing API bug — the transport works fine for typical game messages. Root cause: `NET_SEND_WINDOW = 32` in `transport_impl.h:231`; the sender drops oldest unacked packets when the window is full, and under heavy fragmentation the oldest packets haven't been acked yet. Fix would be to either increase the window or implement proper backpressure (queue instead of drop). Out of scope for this audit.
-- **`docs.html` has 13+ broken API examples** (wrong arg counts, wrong types, nonexistent methods). The fix is a full rewrite of the API reference section. Documented in the audit report; not patched here because the volume is large and the examples are illustrative rather than load-bearing — users who hit issues will cross-reference `web/td_api.d.ts` (now correct).
-- **`docs/RHYTHM_MECHANICS.md` has stale references** to `web/examples/beat_demo.js` (removed), wrong return-value description for `td_beat_register_hit`, wrong file location for `BeatTrackerComponent`, and fabricated API (`get_seconds_per_beat`, `onBeatNiceness`, `recompute_bounds`). Documented; not patched.
+These lower-priority items remain documented for follow-up PRs:
+
 - **`wasm/README.md` has stale references** to `src/td/` (removed), `web/examples/voidrunner.js` (removed), `web/engine-wrapper.ts` (doesn't exist), and an incomplete C API function table. Documented; not patched.
 - **`web/GETTING_STARTED.md` "Reference: all exported C functions" table** is missing ~50 functions. Documented; not patched.
 - **`web/inspector.js` doc-comment** promises `TDInspector.select(entityId)` and `TDInspector.onSelect(callback)` as top-level methods; neither exists (only on the `mount()` handle). Documented; not patched.
@@ -603,6 +627,179 @@ After all fixes:
 - **`web/net_websocket.js` RPC constructor** overwrites `socket.onMessage`, clobbering any user-installed handler. Documented; not patched (would require an event-emitter refactor).
 
 These pre-existing issues are tracked in the audit reports and can be addressed in follow-up PRs.
+
+---
+
+## 7. Round-2 fixes — pre-existing issues resolved
+
+### 7.1 `test_net` 256KB fragmentation — root cause + fix
+
+**Severity:** ERROR (large reliable messages never arrived)
+
+**Symptom:** Test 3 (`test_large_ordered`) failed with `received exactly 1 message (got 0)` — the 256KB message never reassembled at the receiver, even after 2 seconds of pumping.
+
+**Root cause (two bugs, both in `src/net/transport.cpp`):**
+
+1. **Sentinel-state bug in `ReliableChannel::markReceived`.** `m_recvContiguous`
+   starts at `0xFFFF` as a sentinel meaning "nothing received yet". The generic
+   `seqLessThan(s, m_recvContiguous)` check used to interpret `s=0` as "older
+   than 0xFFFF" (because `0 < 0xFFFF` in normal arithmetic) and returned
+   early — leaving `m_recvContiguous` stuck at the sentinel forever. Every ACK
+   was then sent with `ackSeq=0xFFFF`, which the sender interprets as "no ack
+   info" and ignores. Result: the sender's send window never opened up after
+   the first 32 packets, so the remaining ~158 fragments of a 256KB message
+   never transmitted.
+
+2. **Drop-oldest-unacked policy in `ReliableChannel::send`.** When the send
+   window was full, the code erased the oldest entry from `m_unacked` to make
+   room for the new one. But that oldest packet had already been transmitted
+   on the wire — erasing it from `m_unacked` only removed the sender's ability
+   to *retransmit* it. If the packet was lost in transit (e.g. UDP recv
+   buffer overflow on the receiver — 190 × 1400 bytes > default 208KB Linux
+   recv buffer), the sender could never retransmit it. The message was
+   permanently corrupted (missing fragment).
+
+**Fix:**
+
+- For bug #1: special-case the sentinel in `markReceived`. If
+  `m_recvContiguous == 0xFFFF`, set it to `s` directly (and seed the dedup
+  bitmap). After this fix, the first packet advances the cursor and ACKs
+  flow correctly. (`src/net/transport.cpp`)
+
+- For bug #2: add proper backpressure via a `m_pending` deque. When the send
+  window is full, packets are queued in `m_pending` instead of being
+  transmitted immediately (and instead of dropping anything from
+  `m_unacked`). `ReliableChannel::update()` drains `m_pending` as ACKs free
+  up window slots. A `NET_MAX_PENDING = 2048` cap (≈ 2.7 MB per connection)
+  bounds memory under sustained oversend. (`src/net/transport_impl.h` +
+  `src/net/transport.cpp`)
+
+After both fixes, `make test` reports **91/91 net tests passing**, including
+Test 3 (`PASS: received exactly 1 message (got 1)`,
+`PASS: received data matches sent data byte-for-byte`,
+`PASS: received length is 262144 (expected 262144)`).
+
+### 7.2 `docs/RHYTHM_MECHANICS.md` — stale references cleaned up
+
+**Severity:** MISMATCH (docs described an API that didn't exist)
+
+The doc referenced:
+- `web/examples/beat_demo.js` — REMOVED (no such file exists).
+- `BeatTrackerComponent` "in `src/ecs/beat_system.cpp`" — WRONG (the struct
+  is declared in `src/ecs/component.h`; only the `BeatSystem` logic lives in
+  `beat_system.cpp`).
+- `get_seconds_per_beat()`, `get_playback_time()`, `get_song_time()` —
+  FABRICATED. The actual field is `BeatTrackerComponent::spb` (seconds per
+  beat, cached as `60/bpm`).
+- `onBeatNiceness`, `metroTween` — FABRICATED. The actual field is
+  `windowHalf` (half-width of the on-beat tolerance, in seconds).
+- `recompute_bounds()` — FABRICATED. Bounds are recomputed inline inside
+  `BeatSystem::update()`; there is no separate method.
+- `td_beat_register_hit` "returns the score delta (100 + combo × 10 in
+  non-strict mode)" — WRONG. Returns the new combo count (not a score
+  delta). The game decides the scoring formula.
+- `TDBridge.onBeat(cb)` — FABRICATED. The actual JS API is
+  `TDEngine.beat.setCallback(cb)`.
+
+**Fix:** Rewrote the entire doc against the real implementation. Cross-referenced
+`src/ecs/component.h` (struct definition), `src/ecs/beat_system.cpp` (per-frame
+update logic), `wasm/emscripten_main.cpp` (C exports), and `web/td_api.js`
+(JS wrapper). Updated the implementation-status table to point at the correct
+files. Added a "per-entity beat callbacks" item to the open-work section
+(`td_beat_set_callback` is currently a single global callback; a per-entity
+variant would be a future enhancement).
+
+---
+
+## 8. Architecture & documentation expansion — Game Kit + standalone server
+
+This round also delivers the requested architectural expansion: **a custom game
+API and standalone self-hosted server architecture**, with the public game API
+broadened past `newstarget` to support **web-development workflows** (free asset
+pipelines, CDN routing, and flexible client-server communication hooks).
+
+### 8.1 `web/game_kit.js` — four new browser-side namespaces
+
+A new ~600-LOC pure-JS IIFE module exposing:
+
+| Namespace | Purpose |
+|---|---|
+| `TDAssets` | Free asset pipeline. `fetchBytes/fetchText/fetchJson` with caching + retry; `decodeImage/decodeAudio` for browser-side decoding; `uploadTexture` + `loadTexture` + `loadAudio` one-shots that fetch + decode + feed into the engine. Works with any CORS-enabled URL (your CDN, GitHub raw, Openverse, DiceBear, PokéAPI, etc.). |
+| `TDCDN` | Multi-origin CDN routing with failover. `addOrigin(prefix, {weight})` configures a list of CDN prefixes; `resolve(path)` tries each in weight order with a HEAD request, falling through on 404 and marking 5xx / network-error origins unhealthy for 30 seconds. Same API in dev (local files) and prod (CDN). |
+| `TDRest` | REST helper. Wraps `fetch()` with `setDefaultHeader/Timeout/Retries`, per-host rate-limit tracking (honors `Retry-After`), automatic JSON encoding of object bodies, and convenience methods (`getJson`, `postJson`, `putJson`, `del`). Use it for any HTTP API call — pairs with the 25-API survey in `docs/PUBLIC_APIS.md`. |
+| `TDServer` | Flexible client-server hooks. Wraps the existing `TDNet.Socket` transport with typed channels (pub/sub per topic, per room), RPC with timeouts, SSE / long-poll fallback for read-only streams, presence (who's online in this room), save sync (push/pull local `TDPersistence` slots to the server for cross-device roaming), and custom client hooks (server can invoke client-side handlers via the `hook` frame). |
+
+All four are pure-JS IIFEs with zero external dependencies. Loaded additively
+in `web/index.html` after `net_websocket.js`. Failure to load one does not
+break the engine boot.
+
+**Tests:** `tests/test_game_kit.js` — 32 tests covering TDAssets
+(fetch/decode/cache), TDCDN (origins, failover, weight-based ordering),
+TDRest (default headers, 5xx retry, 429 rate-limit tracking, JSON encoding),
+TDServer (hook registration, snapshot). All pass in Node via a vm sandbox
+with fake `fetch` + fake `WebSocket`.
+
+### 8.2 `tools/server/td_server.js` — standalone self-hosted server
+
+A complete, runnable Node.js server (~580 LOC, one npm dependency: `ws`).
+Implements the wire protocol that `TDServer` (above) speaks, plus everything
+a real multiplayer game needs:
+
+- **WebSocket relay** — rooms (with max-players cap + auto-vacuum), presence
+  (periodic peer-list broadcast), channel pub/sub (per-room, with directed
+  `to=peerId` option), RPC dispatch, and custom client hooks
+  (`server.callClientHook(peerId, name, args)` — server invokes a
+  client-side handler and awaits the result).
+- **HTTP asset proxy** — `GET /proxy/:secretKey/*path` looks up
+  `cfg.secrets[secretKey]` to get a base URL + auth header, fetches the
+  target with the header injected, and pipes the response back. Keeps API
+  keys (Freesound, Unsplash, etc.) server-side — the browser never sees them.
+- **File-backed save roaming** — `savePush`/`savePull`/`saveList` RPCs write
+  to `${savesDir}/${playerId}/${slotName}.json`. Players can sign in from
+  any browser and pull their saves.
+- **Room management** — `roomList` / `roomCreate` / `whoami` RPCs.
+- **Static file server** — serve your game's `index.html` + assets from
+  one process. Path-traversal-safe. Common MIME types auto-detected.
+- **Game-defined RPC handlers** — `server.registerRpc('submitScore', (args, ctx) => ...)`.
+  Game code registers its own methods in a small bootstrap script that calls
+  `startServer()` and then `server.registerRpc(...)`. The `ctx` carries
+  `peerId`, `room`, and a `server` back-reference for cross-cutting calls.
+- **Configurable** via JSON file, env vars, or CLI flags.
+
+**Tests:** `tests/test_td_server.js` — 48 tests covering config parsing
+(`parseArgs`, `loadConfig`), the `TdServer` class (peer lifecycle, room
+management, channel pub/sub broadcast + directed, RPC dispatch success +
+unknown-method, save sync push/pull/list, client hooks success + timeout,
+presence broadcast), and E2E via a real `ws` client + real HTTP server
+on a random port (hello/helloAck, two-client presence, RPC round-trip,
+channel pub/sub across two clients, game-registered RPC handler). All pass.
+
+### 8.3 Documentation — cohesive updates
+
+- **New:** `docs/GAME_KIT.md` — full reference for the four Game Kit
+  namespaces (TDAssets, TDCDN, TDRest, TDServer). Includes a "putting it all
+  together" full-stack boot sequence showing CDN routing + asset loading +
+  REST + server connection + channels + RPC + save sync + custom hooks in
+  one cohesive example.
+- **New:** `docs/SELF_HOSTED_SERVER.md` — full reference for the standalone
+  server. Covers config file format, wire protocol, built-in RPC methods,
+  game-defined RPC handlers, HTTP asset proxy, static file serving, CORS,
+  production deployment (nginx reverse proxy, pm2, Docker), and the
+  client-side pairing.
+- **Updated:** `web/docs.html` — rewrote the Lifecycle, ECS, Input, Beat,
+  Scripting, i18n sections to match the real API (fixing the 13+ broken
+  examples from the previous round). Added new sections: 3D Physics,
+  Game Kit (TDAssets, TDCDN, TDRest, TDServer), and the Standalone server
+  guide. Updated the module list (10 → 11 web modules + 1 standalone
+  server) and the test-suite table (5 → 7 web suites; 655 → 735 tests;
+  C++ tests now note the 256KB fragmentation fix).
+- **Updated:** `README.md` — added 4 rows to the "Subsystems at a glance"
+  table (TDAssets, TDCDN, TDRest, TDServer), a new "Game Kit (web-dev
+  workflow)" section with a full example, a new "Standalone self-hosted
+  server" section with quick-start + custom-RPC example, and 3 new entries
+  in the Documentation list (GAME_KIT.md, SELF_HOSTED_SERVER.md, PIPELINE.md).
+- **Updated:** `web/GETTING_STARTED.md` — the "Where to go next" section now
+  points at the new Game Kit docs and the standalone server.
 
 ---
 
@@ -670,3 +867,28 @@ C++ headers:
 
 **File permissions (5):**
 - `chmod +x` on `tools/cli/td.js`, `tools/tdscript/tdscript.js`, `tools/bundler/bundle.py`, `tools/gen_font.py`, `scripts/patch_makefile.py`
+
+---
+
+## Round-2 files changed
+
+**New files (5):**
+- `web/game_kit.js` — TDAssets, TDCDN, TDRest, TDServer (browser-side game-dev toolkit)
+- `tools/server/td_server.js` — standalone self-hosted Node.js server (WebSocket relay + asset proxy + save roaming + RPC dispatch)
+- `tests/test_game_kit.js` — 32 tests for the Game Kit namespaces
+- `tests/test_td_server.js` — 48 tests for the standalone server (unit + E2E)
+- `docs/GAME_KIT.md` — full reference for the four Game Kit namespaces
+- `docs/SELF_HOSTED_SERVER.md` — full reference for the standalone server
+
+**Modified files (8):**
+
+C++ (test_net 256KB fix):
+- `src/net/transport_impl.h` — added `<deque>` include; added `NET_MAX_PENDING` constant; added `m_pending` deque member; added `pendingCount()` accessor
+- `src/net/transport.cpp` — sentinel-state fix in `markReceived`; backpressure queue in `ReliableChannel::send`; drain loop in `ReliableChannel::update`; `reset()` clears `m_pending`
+
+Docs:
+- `docs/RHYTHM_MECHANICS.md` — full rewrite against the real implementation (removed fabricated API, corrected file locations, fixed `td_beat_register_hit` return-value description)
+- `web/docs.html` — rewrote Lifecycle / ECS / Input / Beat / Scripting / i18n sections against the real API; added new sections (3D Physics, Game Kit TDAssets/TDCDN/TDRest/TDServer, Standalone server guide); updated module list (10 → 11 + 1 server) and test-suite table (655 → 735 tests); added `.td-new` CSS badge
+- `README.md` — added 4 rows to the subsystem table; added "Game Kit (web-dev workflow)" + "Standalone self-hosted server" sections; added 3 new doc links
+- `web/GETTING_STARTED.md` — "Where to go next" now points at the new Game Kit docs and the standalone server
+- `PIPELINE.md` — this file: added §7 (round-2 pre-existing-issue fixes) and §8 (architecture expansion)

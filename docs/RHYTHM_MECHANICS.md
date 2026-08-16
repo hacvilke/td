@@ -2,9 +2,12 @@
 
 This document describes the design and implementation of TD Engine's
 beat-synced gameplay system. The system lives in `src/ecs/beat_system.cpp`
-and is exposed to web games through the `td_beat_*` family of C functions
-in `wasm/emscripten_main.cpp`. A complete working demo ships at
-`web/examples/beat_demo.js`.
+(the `BeatSystem` and its per-frame update logic) and `src/ecs/component.h`
+(the `BeatTrackerComponent` struct). It is exposed to web games through
+the `td_beat_*` family of C functions in `wasm/emscripten_main.cpp` and
+wrapped by the `TDEngine.beat` namespace in `web/td_api.js`. A working
+example ships at `examples/3d-showcase/game/beat.js` (beat-synced visual
+pulse inside the 3D showcase).
 
 ## 1. Overview
 
@@ -19,7 +22,7 @@ A rhythm game needs the engine to do three things on time, every time:
 TD Engine already had the primitives for (1): the `td::Mixer` plays WAV
 samples with loop support, and the `GameLoop`'s fixed-step accumulator
 provides a deterministic clock. The beat system layers (2) and (3) on top
-as a small ECS component + system, exposed to JavaScript through five
+as a small ECS component + system, exposed to JavaScript through thirteen
 `EMSCRIPTEN_KEEPALIVE` C functions.
 
 ## 2. Architecture
@@ -29,33 +32,57 @@ of the work:
 
 ### 2.1 Song-level state (the music handler)
 - The backing track is played by the existing `td::Mixer::play(wav, volume, loop=true)`.
-- `get_seconds_per_beat()` returns `60.0 / BPM` — the canonical beat
-  interval in seconds.
-- `get_playback_time()` returns the mixer channel's current sample index,
-  converted to seconds.
-- `get_song_time()` returns playback time AND detects loops: if the new
-  `songTime` is less than the previous frame's value (i.e., time went
-  backward), the song looped — reset the metronome to the loop point.
+- `BeatTrackerComponent::spb` (seconds-per-beat) is computed once at
+  start time as `60.0f / bpm` and cached on the component. It is the
+  canonical beat interval used by every other calculation.
+- Engine time (`td::g_time.totalTime`) is the clock the beat system
+  reads. The mixer's playback position is intentionally NOT used as the
+  metronome clock — engine time is deterministic across fixed-step
+  updates, while the mixer's sample index can drift or jump. The beat
+  system instead tracks beats relative to `startTime` (engine time when
+  `td_beat_start` was called).
+- Loop detection is implicit: if the engine time appears to go backward
+  relative to `lastBeatTime` (i.e. `engineTime < lastBeatTime`), the
+  beat system treats it as a loop / reset and recomputes `nextBeatTime`
+  and `lastBeatTime` from `startTime` so no drift accumulates.
 
 ### 2.2 Beat-level state (the metronome)
-The `BeatTrackerComponent` (in `src/ecs/beat_system.cpp`) holds:
-- `nextBeat` — engine time of the next metronome tick.
-- `onBeatNiceness` — half-width of the on-beat tolerance window, in seconds.
-- `metroTween` — fade-out animation for the debug indicator.
-- `upperBound` / `lowerBound` — the on-beat hit window (see §3 below for
-  why this is two values, not one).
+The `BeatTrackerComponent` (declared in `src/ecs/component.h`, updated
+by `BeatSystem` in `src/ecs/beat_system.cpp`) holds:
 
-Per-frame `update(world, engineTime)`:
-1. Read `songTime`, `spb`, `loopPoint` via the getters above.
-2. If `songTime >= nextBeat`: fire the beat event, advance
-   `nextBeat += spb`, recompute the bounds, fade the debug text.
-3. If the song looped: play the metronome tick, hard-reset `nextBeat` to
-   the loop point. This prevents floating-point drift from accumulating
-   across multiple loops.
+- `bpm` — beats per minute (set by `td_beat_start` or `td_beat_set_bpm`).
+- `spb` — seconds per beat (cached `60.0f / bpm`).
+- `startTime` — engine time when tracking started.
+- `nextBeatTime` — engine time of the next metronome tick.
+- `lastBeatTime` — engine time of the most recent metronome tick.
+- `windowHalf` — half-width of the on-beat tolerance window, in seconds.
+- `upperBound` / `lowerBound` — the on-beat hit window (see §3 below
+  for why this is two values, not one).
+- `combo` / `bestCombo` / `beatCount` / `lastHitTime` / `active`.
+
+Per-frame `BeatSystem::update(world, engineTime)`:
+1. If `engineTime < lastBeatTime` (loop / reset detected), recompute
+   `nextBeatTime` and `lastBeatTime` from `startTime` so the metronome
+   stays aligned with the song's loop point.
+2. Recompute the two-half-window bounds (`upperBound` / `lowerBound`).
+3. Catch-up loop: while `engineTime >= nextBeatTime`, fire the beat event
+   (advancing `lastBeatTime = nextBeatTime`, then
+   `nextBeatTime += spb`), recompute the bounds, and (if a JS callback
+   is registered) invoke `td_beat_set_callback`'s callback with the new
+   beat count and the beat time. The catch-up loop is bounded by a
+   safety counter so a tiny `spb` set by mistake cannot lock the engine.
 
 ### 2.3 Input judgement (`td_beat_is_on_beat` + `td_beat_register_hit`)
-Returns true if the current `songTime` is inside the on-beat window. The
-window is actually a union of two half-windows around each beat — see §3.
+`td_beat_is_on_beat(entityId)` returns 1 if the current engine time is
+inside the on-beat window. The window is actually a union of two
+half-windows around each beat — see §3.
+
+`td_beat_register_hit(entityId, strict)` records a player hit. With
+`strict=1`, a hit outside the on-beat window resets the combo to 0 and
+returns 0. With `strict=0`, every call increments the combo (the JS
+side is expected to gate with `td_beat_is_on_beat` itself). The return
+value is the **new combo count** (not a score delta — the JS game
+decides how to convert combo into score).
 
 ## 3. The two-half-window trick (the most valuable insight)
 
@@ -72,36 +99,60 @@ the player can never be "after the current beat but before
 `upperBound`". The lower half of the window works; the upper half does
 not.
 
-The fix is to split into two ranges:
+The fix is to split into two ranges, computed inside `BeatSystem::update`
+immediately after each beat fires:
 
 ```
-upperBound = currentBeat + tolerance   (forward-looking from the beat that just fired)
-lowerBound = nextBeat    - tolerance   (backward-looking from the upcoming beat)
+upperBound = lastBeatTime + windowHalf   (forward-looking from the beat that just fired)
+lowerBound = nextBeatTime - windowHalf   (backward-looking from the upcoming beat)
 ```
 
 The window the player sees is the union of these two half-windows around
 each beat. Reads as one symmetric window to the player; under the hood
-it's two adjacent half-windows. This is the implementation in
-`BeatTrackerComponent::recompute_bounds()`.
+it is two adjacent half-windows. The check in
+`BeatSystem::isOnBeat` is:
+
+```
+isOnBeat = (engineTime <= upperBound) || (engineTime >= lowerBound)
+```
+
+Wait — that looks reversed. The trick is that the "off-beat" gap is the
+range `(upperBound, lowerBound)` between the two half-windows. So
+"on-beat" is "not in the gap": `engineTime <= upperBound OR
+engineTime >= lowerBound`. When `upperBound` and `lowerBound` overlap
+or touch (i.e. `spb <= 2 * windowHalf`), every moment counts as on-beat
+— which is the correct degenerate behavior for very high BPMs or very
+wide windows.
 
 ## 4. Loop-point desync fix
 
 A naive implementation of loop handling just keeps advancing
-`nextBeat += spb` as if nothing happened when the song loops.
+`nextBeatTime += spb` as if nothing happened when the song loops.
 
-The problem: `nextBeat` drifts relative to the actual song position over
-multiple loops because of accumulated floating-point error and imperfect
-loop-point alignment. After 30 loops at 120 BPM, the metronome can be
-audibly off from the beat.
+The problem: `nextBeatTime` drifts relative to the actual song position
+over multiple loops because of accumulated floating-point error and
+imperfect loop-point alignment. After 30 loops at 120 BPM, the metronome
+can be audibly off from the beat.
 
-The fix: on loop detection, hard-reset `nextBeat = loopPoint` and fire
-the beat immediately. Tiny timing imperfection at the loop boundary, but
-no drift accumulation. This is the implementation in
+The fix: on loop detection (`engineTime < lastBeatTime`), recompute
+both `nextBeatTime` and `lastBeatTime` directly from `startTime` and
+the integer beat count:
+
+```
+beatsElapsed = floor((engineTime - startTime) / spb)
+lastBeatTime = startTime + beatsElapsed * spb
+nextBeatTime = startTime + (beatsElapsed + 1) * spb
+```
+
+This snaps the metronome back to the mathematically correct position
+relative to the start of the song. Tiny timing imperfection at the loop
+boundary, but no drift accumulation. This is the implementation in
 `BeatSystem::update()`'s loop-detection branch.
 
 ## 5. C API exports
 
-Defined in `wasm/emscripten_main.cpp`, all `EMSCRIPTEN_KEEPALIVE`:
+Defined in `wasm/emscripten_main.cpp`, all `EMSCRIPTEN_KEEPALIVE`. The
+full table (13 functions):
 
 | Function | Purpose |
 |---|---|
@@ -111,56 +162,61 @@ Defined in `wasm/emscripten_main.cpp`, all `EMSCRIPTEN_KEEPALIVE`:
 | `td_beat_get_count(entityId)` | Total beats elapsed since `td_beat_start`. |
 | `td_beat_get_next_beat_time(entityId)` | Engine time of the next beat tick. |
 | `td_beat_get_last_beat_time(entityId)` | Engine time of the most recent beat tick. |
-| `td_beat_register_hit(entityId, strict)` | Record a player hit; returns the score delta (100 + combo × 10 in non-strict mode, 100 + combo × 20 in strict). Resets combo on miss. |
 | `td_beat_get_combo(entityId)` | Current hit-combo count. |
 | `td_beat_get_best_combo(entityId)` | Best combo this session. |
-| `td_beat_reset_combo(entityId)` | Reset combo to 0 (called on miss). |
+| `td_beat_register_hit(entityId, strict)` | Record a player hit. Returns the new combo count (not a score delta). With `strict=1`, a hit outside the on-beat window resets combo and returns 0. |
+| `td_beat_reset_combo(entityId)` | Reset combo to 0. Returns the previous combo count. |
 | `td_beat_set_callback(cb)` | Register a JS callback invoked on every beat tick. Signature: `function(beatCount, beatTime)`. |
 | `td_beat_set_bpm(entityId, newBpm)` | Change BPM mid-song. Recomputes `spb` and the bounds. |
 | `td_beat_play_sound(entityId, wavIndex)` | Play a one-shot metronome tick through the mixer. |
 
 ## 6. JavaScript usage
 
-A minimal rhythm game in JavaScript:
+The recommended way to use the beat system from a web game is the
+`TDEngine.beat` namespace in `web/td_api.js`. A minimal rhythm game:
 
 ```javascript
-TDBridge.onReady(() => {
-  const M = TDBridge.wasmExports;
-  const td_create     = M.cwrap('td_create_entity',      'number', ['string']);
-  const td_set_pos    = M.cwrap('td_entity_set_position', null,     ['number','number','number']);
-  const td_beat_start = M.cwrap('td_beat_start',          null,     ['number','number','number']);
-  const td_beat_is    = M.cwrap('td_beat_is_on_beat',     'number', ['number']);
-  const td_beat_hit   = M.cwrap('td_beat_register_hit',   'number', ['number','number']);
-  const td_beat_cb    = M.cwrap('td_beat_set_callback',   null,     ['number']);
+await TDEngine.lifecycle.init('game-canvas');
 
-  // Create a "song" entity that owns the beat tracker.
-  const songEntity = td_create('song');
-  td_set_pos(songEntity, 0, 0);
+// Create a "song" entity that owns the beat tracker.
+const songEntity = TDEngine.ecs.create('song');
+TDEngine.entity.setPosition(songEntity, 0, 0);
 
-  // 140 BPM, 150ms half-window (300ms total on-beat tolerance).
-  td_beat_start(songEntity, 140.0, 0.15);
+// 140 BPM, 150ms half-window (300ms total on-beat tolerance).
+TDEngine.beat.start(songEntity, 140.0, 0.15);
 
-  // Spawn a note on every beat.
-  td_beat_cb(M.addFunction((beatCount, beatTime) => {
-    spawnNote(beatCount);
-  }, 'vii'));
+// Spawn a note on every beat. The callback receives (beatCount, beatTime).
+TDEngine.beat.setCallback((beatCount, beatTime) => {
+  spawnNote(beatCount, beatTime);
+});
 
-  document.addEventListener('keydown', (e) => {
-    if (e.keyCode === 0x20 /* Space */) {
-      const onBeat = td_beat_is(songEntity);
-      if (onBeat) {
-        score += td_beat_hit(songEntity, 0);  // bonus + combo
-        flashBeatIndicator();
-      } else {
-        score += 10;  // weak hit
-      }
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    const onBeat = TDEngine.beat.isOnBeat(songEntity);
+    if (onBeat) {
+      const newCombo = TDEngine.beat.registerHit(songEntity, /*strict=*/false);
+      score += 100 + newCombo * 10;   // game decides the scoring formula
+      flashBeatIndicator();
+    } else {
+      score += 10;                    // weak hit
     }
-  });
+  }
 });
 ```
 
-A complete, working demo is in `web/examples/beat_demo.js` — a 2-key
-"tap on the beat" mini-game playable in the live web player.
+For the raw C-API path (when you need a function the `TDEngine.beat`
+wrapper does not expose), use `TDEngine.bridge.wasmExports` directly:
+
+```javascript
+const M = TDEngine.bridge.wasmExports;
+const td_beat_get_next_beat_time = M.cwrap('td_beat_get_next_beat_time',
+                                            'number', ['number']);
+const tPlus = td_beat_get_next_beat_time(songEntity) - TDEngine.clock.now();
+```
+
+A working example of beat-synced visuals ships at
+`examples/3d-showcase/game/beat.js` — a pulsing-color card that reacts
+to each beat tick inside the 3D showcase demo.
 
 ## 7. Why this matters for the engine
 
@@ -186,14 +242,13 @@ A rhythm-game demo showcases three things the other demos don't:
 
 | Piece | Status | File |
 |---|---|---|
-| `BeatTrackerComponent` | ✅ Shipped | `src/ecs/beat_system.cpp` |
+| `BeatTrackerComponent` struct | ✅ Shipped | `src/ecs/component.h` |
 | `BeatSystem::update` (per-frame tick + loop detect) | ✅ Shipped | `src/ecs/beat_system.cpp` |
-| Two-half-window bounds | ✅ Shipped | `src/ecs/beat_system.cpp` |
-| Loop-point hard-reset | ✅ Shipped | `src/ecs/beat_system.cpp` |
+| `BeatSystem::isOnBeat` (two-half-window check) | ✅ Shipped | `src/ecs/beat_system.cpp` |
+| Loop-point recomputation from `startTime` | ✅ Shipped | `src/ecs/beat_system.cpp` |
 | 13 `td_beat_*` C exports | ✅ Shipped | `wasm/emscripten_main.cpp` |
-| `TDBridge.onBeat(cb)` JS bridge | ✅ Shipped | `wasm/js_bridge.js` |
-| `beat_demo.js` sample game | ✅ Shipped | `web/examples/beat_demo.js` |
-| `test_beat_*` regression tests | ✅ Shipped | `tests/test_*.cpp` |
+| `TDEngine.beat.*` JS wrapper (lazy cwrap) | ✅ Shipped | `web/td_api.js` |
+| Beat-synced visual example | ✅ Shipped | `examples/3d-showcase/game/beat.js` |
 
 ## 9. Open work
 
@@ -206,7 +261,13 @@ A rhythm-game demo showcases three things the other demos don't:
   `decodeAudioData` and feed PCM into the Mixer.
 - **Explicit loop callback on `MixerChannel`.** Today, loop detection
   happens in the `BeatSystem` by comparing the previous and current
-  `songTime`. Cleaner would be an explicit `onLoop` callback fired by
-  the mixer itself when it wraps.
+  `lastBeatTime`. Cleaner would be an explicit `onLoop` callback fired
+  by the mixer itself when it wraps.
+- **Per-entity beat callbacks.** Today `td_beat_set_callback` is a
+  single global callback. If two entities each have a
+  `BeatTrackerComponent` with different BPMs, the global callback fires
+  for both beats with no way to distinguish which entity ticked. A
+  per-entity callback (`td_beat_set_callback_for(entityId, cb)`) would
+  fix this.
 
 These are tracked as roadmap items, not blockers for the demo.
