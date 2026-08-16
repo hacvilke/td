@@ -20,9 +20,11 @@
 // the JS TDNet.RPC wire format is in json_rpc.h + json_rpc.cpp. A
 // MockNetPeer (loopback, for unit tests) is in mock_peer.h.
 //
-// Concrete peer TODOs:
-//   - WebSocketPeer  (for native clients talking to a JS server)  — TODO
-//   - ENetPeer       (raw UDP, native-only, lower latency)        — TODO
+// Concrete peers:
+//   - WebSocketPeer  (SHIPPED — native + WASM)  — src/net/websocket_peer.{h,cpp}
+//     Native impl uses Winsock2 (Windows) / POSIX sockets (Linux, macOS).
+//     WASM impl uses Emscripten's <emscripten/websocket.h> API.
+//   - ENetPeer       (TODO — raw UDP, native-only, lower latency)
 // Browsers cannot use raw UDP, so the WASM path always goes through
 // WebSocketPeer (or the JS TDNet.Socket directly).
 // =============================================================================

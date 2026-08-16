@@ -45,7 +45,7 @@ public:
     void setPosition(const Vec3& pos);
     void setTarget(const Vec3& target);
     void setFOV(float fovDeg);
-    void setNearFar(float near, float far);
+    void setNearFar(float nearPlane, float farPlane);
     
     Mat4 getProjection() const;
     Mat4 getView() const;

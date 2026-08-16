@@ -171,14 +171,24 @@
         break;
 
       case 'ping':
-        // Reply with pong, echoing their timestamp.
-        this._broadcast({ t: 'pong', id: this.peerId, ts: msg.ts });
-        // Also mark them as seen.
-        if (this._peers.has(msg.id)) this._peers.get(msg.id).lastSeen = Date.now();
+        // Reply with a DIRECTED pong (to: msg.id) so only the pinger
+        // processes it. Broadcasting pong to all peers would corrupt their
+        // RTT measurements with someone else's send timestamp.
+        this._broadcast({ t: 'pong', id: this.peerId, to: msg.id, ts: msg.ts });
+        // Also mark them as seen (and create the peer entry if this is the
+        // first we've heard of them — they may not have sent hello yet).
+        if (!this._peers.has(msg.id)) {
+          this._peers.set(msg.id, { lastSeen: Date.now(), rttMs: 0 });
+        } else {
+          this._peers.get(msg.id).lastSeen = Date.now();
+        }
         break;
 
       case 'pong':
-        // Compute RTT if we have a matching ping outstanding.
+        // Only process pongs directed at us (the `to` field is set by the
+        // pinger's reply; if it's missing or doesn't match, ignore — this
+        // pong was meant for someone else and would corrupt our RTT).
+        if (msg.to !== undefined && msg.to !== this.peerId) return;
         if (this._peers.has(msg.id)) {
           const peer = this._peers.get(msg.id);
           peer.lastSeen = Date.now();

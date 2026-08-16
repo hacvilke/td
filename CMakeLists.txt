@@ -189,11 +189,16 @@ if(TD_BUILD_WEB)
     )
 
     # Emscripten compile + link flags. Must match the Makefile's EMCCFLAGS.
+    # EXPORT_KEEPALIVE=1 auto-exports every function marked EMSCRIPTEN_KEEPALIVE
+    # in wasm/emscripten_main.cpp (including all td_physics_* + td_beat_* +
+    # td_touch_* + td_gamepad_* functions). This is defense-in-depth so the JS
+    # bridge can call them even if they aren't listed explicitly below.
     set(EMCC_FLAGS
         -s WASM=1
         -s USE_WEBGL2=1
         -s ALLOW_MEMORY_GROWTH=1
         -s DISABLE_DEPRECATED_FIND_EVENT_TARGET_BEHAVIOR=1
+        -s EXPORT_KEEPALIVE=1
     )
 
     if(TD_WASM_MEMORY64)
@@ -224,7 +229,7 @@ if(TD_BUILD_WEB)
         -s NO_EXIT_RUNTIME=1
         -s ALLOW_TABLE_GROWTH=1
         -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP16","HEAPU8","getValue","setValue","addFunction"]'
-        -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks","_td_beat_start","_td_beat_stop","_td_beat_is_on_beat","_td_beat_get_count","_td_beat_get_next_beat_time","_td_beat_get_last_beat_time","_td_beat_register_hit","_td_beat_get_combo","_td_beat_get_best_combo","_td_beat_reset_combo","_td_beat_set_callback","_td_beat_play_sound","_td_beat_set_bpm","_td_script_load","_td_script_call","_td_script_unload","_td_i18n_load","_td_i18n_set_locale","_td_i18n_t","_td_i18n_is_rtl","_td_touch_begin_frame","_td_touch_start","_td_touch_move","_td_touch_end","_td_touch_count","_td_touch_x","_td_touch_y","_td_touch_pinch_scale","_td_gamepad_begin_frame","_td_gamepad_set_connected","_td_gamepad_set_button","_td_gamepad_set_analog","_td_gamepad_set_axis","_td_gamepad_button_pressed","_td_gamepad_axis","_td_shader_graph_compile","_tdscript_compile"]'
+        -s EXPORTED_FUNCTIONS='["_main","_malloc","_free","_td_init","_td_shutdown","_td_load_scene","_td_set_key_state","_td_set_mouse_state","_td_resize","_td_get_version","_td_fill_audio_buffer","_td_create_entity","_td_entity_set_position","_td_entity_get_position","_td_entity_set_velocity","_td_entity_set_sprite","_td_entity_set_collider","_td_entity_destroy","_td_entity_is_valid","_td_get_entity_count","_td_is_key_down","_td_is_mouse_down","_td_get_mouse_pos","_td_render_frame","_td_set_callbacks","_td_beat_start","_td_beat_stop","_td_beat_is_on_beat","_td_beat_get_count","_td_beat_get_next_beat_time","_td_beat_get_last_beat_time","_td_beat_register_hit","_td_beat_get_combo","_td_beat_get_best_combo","_td_beat_reset_combo","_td_beat_set_callback","_td_beat_play_sound","_td_beat_set_bpm","_td_script_load","_td_script_call","_td_script_unload","_td_i18n_load","_td_i18n_set_locale","_td_i18n_t","_td_i18n_is_rtl","_td_touch_begin_frame","_td_touch_start","_td_touch_move","_td_touch_end","_td_touch_count","_td_touch_x","_td_touch_y","_td_touch_pinch_scale","_td_gamepad_begin_frame","_td_gamepad_set_connected","_td_gamepad_set_button","_td_gamepad_set_analog","_td_gamepad_set_axis","_td_gamepad_button_pressed","_td_gamepad_axis","_td_shader_graph_compile","_td_physics_init","_td_physics_shutdown","_td_physics_step","_td_physics_add_body","_td_physics_remove_body","_td_physics_set_sphere_collider","_td_physics_set_box_collider","_td_physics_set_capsule_collider","_td_physics_set_position","_td_physics_set_velocity","_td_physics_get_position","_td_physics_get_velocity","_td_physics_get_orientation","_td_physics_apply_force","_td_physics_apply_impulse","_td_physics_apply_torque","_td_physics_set_restitution","_td_physics_set_friction","_td_physics_set_gravity_scale","_td_physics_set_use_gravity","_td_physics_add_distance_constraint","_td_physics_add_hinge_constraint","_td_physics_raycast","_td_physics_contact_count","_td_physics_body_count"]'
         -s ASYNCIFY=0
         -s EXIT_RUNTIME=0
     )

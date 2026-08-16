@@ -1,7 +1,7 @@
 {
   "name": "td-sandbox-showcase",
   "version": "1.0.0",
-  "engineVersion": "2026.4.1",
+  "engineVersion": "1.0.0",
   "config": {
     "renderBackend": "WebGL2",
     "targetFrameRate": 60,

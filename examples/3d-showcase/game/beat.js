@@ -34,9 +34,9 @@
       try {
         const ent = global.TDEngine.ecs.create('__beat_master__');
         global.TDEngine.beat.start(ent, _bpm, 0.15);
-        global.TDEngine.beat.setCallback(function () {
+        global.TDEngine.beat.setCallback(function (beatCount, beatTime) {
           _pulseDecay = 1.0;
-          for (const cb of _onBeatCallbacks) cb();
+          for (const cb of _onBeatCallbacks) cb(beatCount, beatTime);
           if (global.TDSandbox && global.TDSandbox.audio) global.TDSandbox.audio.play('beat');
         });
       } catch (e) { /* noop */ }
@@ -71,7 +71,8 @@
     if (currentBeat !== _lastBeat) {
       _lastBeat = currentBeat;
       _pulseDecay = 1.0;
-      for (const cb of _onBeatCallbacks) cb();
+      const beatTime = _startTime + currentBeat * beatInterval;
+      for (const cb of _onBeatCallbacks) cb(currentBeat, beatTime);
       if (global.TDSandbox && global.TDSandbox.audio) global.TDSandbox.audio.play('beat');
     }
     // Decay the pulse.

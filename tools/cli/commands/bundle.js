@@ -125,6 +125,7 @@ async function run(args, opts) {
     url:            opts.url        || cfg.url         || '',
     out:            opts.out        || cfg.out         || null,
     bundle_runtime: opts['bundle-runtime'] === true || cfg.bundle_runtime === true,
+    webview2_bootstrapper: opts['webview2-bootstrapper'] || cfg.webview2_bootstrapper || null,
     license:        opts.license    || cfg.license     || null,
     readme:         opts.readme     || cfg.readme      || null,
     host_exe:       opts['host-exe']|| cfg.host_exe    || path.join(engineRoot, 'build', 'bin', 'td-host.exe'),
@@ -133,6 +134,12 @@ async function run(args, opts) {
     dry_run:        opts['dry-run'] === true || cfg.dry_run === true,
     keep_staging:   opts['keep-staging'] === true || cfg.keep_staging === true,
   };
+
+  // Validate --bundle-runtime requires --webview2-bootstrapper (matches bundle.py).
+  if (merged.bundle_runtime && !merged.webview2_bootstrapper) {
+    err('--bundle-runtime requires --webview2-bootstrapper PATH');
+    return 1;
+  }
 
   // ---- Resolve output path -----------------------------------------------
   let outPath = merged.out
@@ -168,7 +175,12 @@ async function run(args, opts) {
     if (merged.license) pyArgs.push('--license', resolvePath(merged.license));
     if (merged.readme) pyArgs.push('--readme', resolvePath(merged.readme));
     if (merged.iscc) pyArgs.push('--iscc', merged.iscc);
-    if (merged.bundle_runtime) pyArgs.push('--bundle-runtime');
+    if (merged.bundle_runtime) {
+      pyArgs.push('--bundle-runtime');
+      if (merged.webview2_bootstrapper) {
+        pyArgs.push('--webview2-bootstrapper', resolvePath(merged.webview2_bootstrapper));
+      }
+    }
     if (merged.dry_run) pyArgs.push('--dry-run');
     if (merged.keep_staging) pyArgs.push('--keep-staging');
 
@@ -212,6 +224,7 @@ async function run(args, opts) {
     'inspector.js', 'profiler.js', 'persistence.js',
     'error_boundary.js', 'deprecated_tracker.js',
     'net_interpolation.js', 'net_auth_server.js',
+    'tdscript_runtime.js', 'td_client_bootstrap.js',
   ];
   for (const name of RUNTIME_FILES) {
     const src = path.join(merged.web_dir, name);

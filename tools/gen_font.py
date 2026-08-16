@@ -159,9 +159,15 @@ def main():
     out.append("")
     out.append("} // namespace td")
     out.append("")
-    with open("src/ui/font_data.h", "w") as f:
+    # Resolve the output path relative to this script's location so the
+    # script works regardless of the caller's current working directory.
+    # tools/gen_font.py → ../src/ui/font_data.h
+    from pathlib import Path
+    out_path = Path(__file__).resolve().parents[1] / 'src' / 'ui' / 'font_data.h'
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
         f.write("\n".join(out))
-    print(f"Wrote src/ui/font_data.h ({96*16} bytes of glyph data)")
+    print(f"Wrote {out_path} ({96*16} bytes of glyph data)")
 
 if __name__ == "__main__":
     main()

@@ -15,17 +15,20 @@
 //         (id, 100, 200);
 //
 // New (modular, recommended):
-//   await TDEngine.init('game-canvas');        // lifecycle
-//   const id = TDEngine.ecs.create('Player');  // ECS
+//   await TDEngine.lifecycle.init('game-canvas');  // lifecycle
+//   const id = TDEngine.ecs.create('Player');       // ECS
 //   TDEngine.ecs.setPosition(id, 100, 200);
-//   TDEngine.input.isKeyDown(0x41);            // Input
-//   TDEngine.beat.start(id, 120, 0.15);        // Beat / rhythm
-//   TDEngine.script.load(src, 'name');         // Scripting
-//   TDEngine.i18n.setLocale('fr');             // Localization
-//   TDEngine.audio.resume();                   // Audio
-//   TDEngine.touch.count();                    // Touch
-//   TDEngine.gamepad.axis(0, 0);               // Gamepad
-//   TDEngine.shaderGraph.compile(nodeCount);   // Shader graph
+//   TDEngine.input.isKeyDown(TDEngine.input.Key.A);  // Input (Win32 VK code)
+//   TDEngine.beat.start(id, 120, 0.15);             // Beat / rhythm
+//   TDEngine.beat.setCallback((count, time) => console.log(count, time));
+//   TDEngine.script.load(src, 'name');              // Scripting
+//   TDEngine.script.call(handle, 'on_update', [0.016]); // accepts array OR JSON string
+//   TDEngine.i18n.setLocale('fr');                  // Localization
+//   TDEngine.i18n.load('fr', { hello: 'bonjour' }); // accepts object OR JSON string
+//   TDEngine.audio.resume();                        // Audio
+//   TDEngine.touch.count();                         // Touch
+//   TDEngine.gamepad.axis(0, 0);                    // Gamepad
+//   TDEngine.shaderGraph.compile(nodeCount);        // Shader graph
 //
 // Each subsystem is a property on the TDEngine object. Subsystems are lazy
 // (they look up the underlying Module.cwrap on first use) so unused
@@ -33,8 +36,8 @@
 //
 // TDEngine also re-exports TDDeprecated + TDServerRouter for convenience:
 //   TDEngine.deprecated.warn('old_api', 'new_api', '2.0');
-//   TDEngine.server.getCurrentUrl();
-//   TDEngine.server.openSettings();
+//   TDEngine.server.getCurrentServerUrl();
+//   TDEngine.server.saveServerUrl('https://my-vpn.example.com/td/');
 //
 // Compat: TDEngine.bridge === TDBridge, so existing code that uses
 // TDBridge directly continues to work unchanged.
@@ -50,7 +53,7 @@
 
   function ensureModule() {
     if (!global.TDBridge || !global.TDBridge.wasmExports) {
-      throw new Error('TDEngine not initialized — call TDEngine.init(canvasId) first');
+      throw new Error('TDEngine not initialized — call TDEngine.lifecycle.init(canvasId) first');
     }
     return global.TDBridge.wasmExports;
   }
@@ -131,12 +134,12 @@
     count() { return wrap('td_get_entity_count', 'number', []).call(null); },
     setPosition(id, x, y) { wrap('td_entity_set_position', null, ['number','number','number']).call(null, id, x, y); },
     getPosition(id) {
-      // td_entity_get_position writes to two float* out-params; we use
-      // Module._malloc + HEAPF32 to read them back.
+      // td_entity_get_position writes to two float* out-params (outX, outY).
+      // We allocate 8 bytes (2 floats) and pass both pointers.
       const Module = ensureModule();
       const ptr = Module._malloc(8);
       try {
-        wrap('td_entity_get_position', null, ['number','number']).call(null, id, ptr);
+        wrap('td_entity_get_position', null, ['number','number','number']).call(null, id, ptr, ptr + 4);
         return { x: Module.HEAPF32[ptr >> 2], y: Module.HEAPF32[(ptr >> 2) + 1] };
       } finally { Module._free(ptr); }
     },
@@ -155,10 +158,11 @@
     isKeyDown(vk) { return wrap('td_is_key_down', 'number', ['number']).call(null, vk) !== 0; },
     isMouseDown(button) { return wrap('td_is_mouse_down', 'number', ['number']).call(null, button) !== 0; },
     getMousePos() {
+      // td_get_mouse_pos writes to two float* out-params (outX, outY).
       const Module = ensureModule();
       const ptr = Module._malloc(8);
       try {
-        wrap('td_get_mouse_pos', null, ['number']).call(null, ptr);
+        wrap('td_get_mouse_pos', null, ['number','number']).call(null, ptr, ptr + 4);
         return { x: Module.HEAPF32[ptr >> 2], y: Module.HEAPF32[(ptr >> 2) + 1] };
       } finally { Module._free(ptr); }
     },
@@ -196,13 +200,16 @@
     },
     getCombo(entityId) { return wrap('td_beat_get_combo', 'number', ['number']).call(null, entityId); },
     getBestCombo(entityId) { return wrap('td_beat_get_best_combo', 'number', ['number']).call(null, entityId); },
-    resetCombo(entityId) { wrap('td_beat_reset_combo', null, ['number']).call(null, entityId); },
+    resetCombo(entityId) { return wrap('td_beat_reset_combo', 'number', ['number']).call(null, entityId); },
     setBpm(entityId, bpm) { wrap('td_beat_set_bpm', null, ['number','number']).call(null, entityId, bpm); },
     setCallback(cb) {
       // td_beat_set_callback expects a C function pointer. Emscripten's
       // addFunction lets us register a JS function as a callable pointer.
+      // The C typedef is void(*)(int beatCount, float beatTime) so we must
+      // use 'vif' (void int float), NOT 'vi'. Using 'vi' silently drops
+      // the beatTime argument and can corrupt the WASM stack on some ABIs.
       const Module = ensureModule();
-      const ptr = Module.addFunction(cb, 'vi');  // void(int)
+      const ptr = Module.addFunction(cb, 'vif');  // void(int, float)
       wrap('td_beat_set_callback', null, ['number']).call(null, ptr);
       return ptr;
     },
@@ -214,8 +221,14 @@
   // -------------------------------------------------------------------------
   const script = {
     load(src, name) { return wrap('td_script_load', 'number', ['string','string']).call(null, src, name || '<web>'); },
+    // call(handle, fnName, argsJson)
+    //   argsJson may be a JSON-encoded string ('[1, 2, 3]') OR a plain JS
+    //   array (auto-stringified). The C side expects a JSON array string.
     call(handle, fnName, argsJson) {
-      return wrap('td_script_call', 'string', ['number','string','string']).call(null, handle, fnName, argsJson || '[]');
+      const a = (argsJson == null) ? '[]'
+              : (typeof argsJson === 'string') ? argsJson
+              : JSON.stringify(argsJson);
+      return wrap('td_script_call', 'string', ['number','string','string']).call(null, handle, fnName, a);
     },
     unload(handle) { wrap('td_script_unload', null, ['number']).call(null, handle); },
   };
@@ -224,7 +237,13 @@
   // Subsystem: i18n / Localization
   // -------------------------------------------------------------------------
   const i18n = {
-    load(localeStr, json) { wrap('td_i18n_load', null, ['string','string']).call(null, localeStr, json); },
+    // Convenience: accept either a JSON string (preferred, matches the C API)
+    // or a plain JS object (auto-stringified). Backwards-compatible with the
+    // README example which passes a string.
+    load(localeStr, json) {
+      const jsonStr = (typeof json === 'string') ? json : JSON.stringify(json);
+      wrap('td_i18n_load', null, ['string','string']).call(null, localeStr, jsonStr);
+    },
     setLocale(localeStr) { wrap('td_i18n_set_locale', null, ['string']).call(null, localeStr); },
     t(key) { return wrap('td_i18n_t', 'string', ['string']).call(null, key); },
     isRtl() { return wrap('td_i18n_is_rtl', 'number', []).call(null) !== 0; },
@@ -234,7 +253,7 @@
   // Subsystem: Audio
   // -------------------------------------------------------------------------
   const audio = {
-    resume() { if (global.TDBridge && TDBridge.resumeAudio) TDBridge.resumeAudio(); },
+    resume() { if (global.TDBridge && global.TDBridge.resumeAudio) global.TDBridge.resumeAudio(); },
     // Low-level: fill a stereo int16 PCM buffer. Used internally by the
     // bridge's Web Audio integration; exposed here for completeness.
     fillBuffer(outPtr, numFrames) {
@@ -355,46 +374,46 @@
     getPosition(bodyId) {
       const Module = ensureModule();
       const ptr = Module._malloc(12);   // 3 floats
-      wrap('td_physics_get_position', null,
-           ['number','number','number','number'])
-        .call(null, bodyId, ptr, ptr+4, ptr+8);
-      const result = {
-        x: Module.HEAPF32[ptr >> 2],
-        y: Module.HEAPF32[(ptr+4) >> 2],
-        z: Module.HEAPF32[(ptr+8) >> 2],
-      };
-      Module._free(ptr);
-      return result;
+      try {
+        wrap('td_physics_get_position', null,
+             ['number','number','number','number'])
+          .call(null, bodyId, ptr, ptr+4, ptr+8);
+        return {
+          x: Module.HEAPF32[ptr >> 2],
+          y: Module.HEAPF32[(ptr+4) >> 2],
+          z: Module.HEAPF32[(ptr+8) >> 2],
+        };
+      } finally { Module._free(ptr); }
     },
     getVelocity(bodyId) {
       const Module = ensureModule();
       const ptr = Module._malloc(12);
-      wrap('td_physics_get_velocity', null,
-           ['number','number','number','number'])
-        .call(null, bodyId, ptr, ptr+4, ptr+8);
-      const result = {
-        x: Module.HEAPF32[ptr >> 2],
-        y: Module.HEAPF32[(ptr+4) >> 2],
-        z: Module.HEAPF32[(ptr+8) >> 2],
-      };
-      Module._free(ptr);
-      return result;
+      try {
+        wrap('td_physics_get_velocity', null,
+             ['number','number','number','number'])
+          .call(null, bodyId, ptr, ptr+4, ptr+8);
+        return {
+          x: Module.HEAPF32[ptr >> 2],
+          y: Module.HEAPF32[(ptr+4) >> 2],
+          z: Module.HEAPF32[(ptr+8) >> 2],
+        };
+      } finally { Module._free(ptr); }
     },
     getOrientation(bodyId) {
       // Returns quaternion {x, y, z, w}
       const Module = ensureModule();
       const ptr = Module._malloc(16);   // 4 floats
-      wrap('td_physics_get_orientation', null,
-           ['number','number','number','number','number'])
-        .call(null, bodyId, ptr, ptr+4, ptr+8, ptr+12);
-      const result = {
-        x: Module.HEAPF32[ptr >> 2],
-        y: Module.HEAPF32[(ptr+4) >> 2],
-        z: Module.HEAPF32[(ptr+8) >> 2],
-        w: Module.HEAPF32[(ptr+12) >> 2],
-      };
-      Module._free(ptr);
-      return result;
+      try {
+        wrap('td_physics_get_orientation', null,
+             ['number','number','number','number','number'])
+          .call(null, bodyId, ptr, ptr+4, ptr+8, ptr+12);
+        return {
+          x: Module.HEAPF32[ptr >> 2],
+          y: Module.HEAPF32[(ptr+4) >> 2],
+          z: Module.HEAPF32[(ptr+8) >> 2],
+          w: Module.HEAPF32[(ptr+12) >> 2],
+        };
+      } finally { Module._free(ptr); }
     },
 
     // ---- Forces / impulses ----------------------------------------------
@@ -450,14 +469,14 @@
       const Module = ensureModule();
       const pPtr = Module._malloc(12);   // 3 floats for point
       const nPtr = Module._malloc(12);   // 3 floats for normal
-      const bodyId = wrap('td_physics_raycast', 'number',
-        ['number','number','number','number','number','number','number',
-         'number','number','number','number','number','number'])
-        .call(null, ox, oy, oz, dx, dy, dz, maxDist,
-              pPtr, pPtr+4, pPtr+8, nPtr, nPtr+4, nPtr+8);
-      let result = null;
-      if (bodyId >= 0) {
-        result = {
+      try {
+        const bodyId = wrap('td_physics_raycast', 'number',
+          ['number','number','number','number','number','number','number',
+           'number','number','number','number','number','number'])
+          .call(null, ox, oy, oz, dx, dy, dz, maxDist,
+                pPtr, pPtr+4, pPtr+8, nPtr, nPtr+4, nPtr+8);
+        if (bodyId < 0) return null;
+        return {
           bodyId,
           point: {
             x: Module.HEAPF32[pPtr >> 2],
@@ -470,10 +489,10 @@
             z: Module.HEAPF32[(nPtr+8) >> 2],
           },
         };
+      } finally {
+        Module._free(pPtr);
+        Module._free(nPtr);
       }
-      Module._free(pPtr);
-      Module._free(nPtr);
-      return result;
     },
   };
 

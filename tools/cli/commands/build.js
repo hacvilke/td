@@ -108,6 +108,7 @@ async function run(args, opts) {
     'inspector.js', 'profiler.js', 'persistence.js',
     'error_boundary.js', 'deprecated_tracker.js',
     'net_interpolation.js', 'net_auth_server.js',
+    'tdscript_runtime.js', 'td_client_bootstrap.js',
   ];
   let copied = 0;
   for (const name of RUNTIME_FILES) {

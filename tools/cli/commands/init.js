@@ -9,7 +9,7 @@
 //   README.txt          — short orientation
 //
 // If --template <name> is given, uses tools/cli/templates/<name>/ instead of
-// the default template. Built-in templates: "minimal" (default), "platformer".
+// the default template. Built-in templates: "minimal" (default).
 
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +20,7 @@ const {
 
 function help() {
   console.log(`
-td init [name] [--template minimal|platformer]
+td init [name] [--template NAME]
 
 Scaffolds a new game folder.
 
@@ -28,12 +28,12 @@ Arguments:
   name              Folder name (default: my-game)
 
 Options:
-  --template NAME   Template to use (default: minimal)
+  --template NAME   Template to use (default: minimal). Available: minimal
   --here            Use the current directory instead of creating a subfolder
 
 Examples:
   td init my-cool-game
-  td init my-cool-game --template platformer
+  td init my-cool-game --template minimal
 `);
 }
 
@@ -76,6 +76,9 @@ async function run(args, opts) {
     s.replace(/__GAME_NAME__/g, name)
   );
   patchFile(path.join(target, 'README.txt'), (s) =>
+    s.replace(/__GAME_NAME__/g, name)
+  );
+  patchFile(path.join(target, 'game.js'), (s) =>
     s.replace(/__GAME_NAME__/g, name)
   );
 

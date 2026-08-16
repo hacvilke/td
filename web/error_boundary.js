@@ -214,6 +214,9 @@
       const reason = (ev && ev.reason) ? ev.reason : new Error('Unhandled rejection');
       show(reason, { kind: 'unhandledrejection' });
       if (typeof _prevRejection === 'function') return _prevRejection.apply(this, arguments);
+      // Suppress the browser's default "Uncaught (in promise)" log so the
+      // user only sees our crash card, not a duplicate console error.
+      return true;
     };
 
     _installed = true;

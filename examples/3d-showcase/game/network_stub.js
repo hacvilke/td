@@ -65,7 +65,7 @@
         },
         entry: {
           mainScript: 'src/server/server_main.td',
-          clientScript: 'src/client/client_main.td',
+          clientScript: 'game/game.js',
         },
       };
     }

@@ -71,6 +71,12 @@
       };
       ws.onclose = function () {
         console.info('[td-bootstrap] Disconnected from game-net server.');
+        // Clear the runtime's sendFrame hook so TDScript server RPCs don't
+        // silently queue against a closed socket. (Without this, the runtime
+        // would keep calling __td_net_send, which checks readyState===1 and
+        // drops frames — but the user would see no indication that traffic
+        // is being lost.)
+        if (global.__td_net_send) global.__td_net_send = null;
       };
       ws.onerror = function (e) {
         console.warn('[td-bootstrap] WebSocket error:', e);

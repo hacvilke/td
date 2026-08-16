@@ -659,6 +659,43 @@ function generateJs(module) {
     }
   }
 
+  // Emit an if / else-if / else chain. Handles arbitrary depth without
+  // corrupting the shared `indent` variable (the previous implementation
+  // stashed indent into a closure and never restored it, leaving indent=0
+  // after the IIFE returned and then crashing on indent-- with RangeError).
+  function emitIfChain(n) {
+    // First (or only) if.
+    emit('if (' + emitExpr(n.cond) + ') {');
+    indent++;
+    if (n.thenBranch && n.thenBranch.kind === NK.Block) n.thenBranch.children.forEach(emitStmt);
+    else emitStmt(n.thenBranch);
+    indent--;
+
+    // Walk the else-chain.
+    let cur = n.elseBranch;
+    while (cur) {
+      if (cur.kind === NK.IfStmt) {
+        // else if (...) { ... }
+        emit('} else if (' + emitExpr(cur.cond) + ') {');
+        indent++;
+        const tb = cur.thenBranch;
+        if (tb && tb.kind === NK.Block) tb.children.forEach(emitStmt);
+        else emitStmt(tb);
+        indent--;
+        cur = cur.elseBranch;
+      } else {
+        // Plain else { ... } — terminates the chain.
+        emit('} else {');
+        indent++;
+        if (cur.kind === NK.Block) cur.children.forEach(emitStmt);
+        else emitStmt(cur);
+        indent--;
+        cur = null;
+      }
+    }
+    emit('}');
+  }
+
   function emitStmt(n) {
     if (!n) return;
     switch (n.kind) {
@@ -673,35 +710,7 @@ function generateJs(module) {
         emit('let ' + n.text + (n.initExpr ? ' = ' + emitExpr(n.initExpr) : '') + ';');
         break;
       case NK.IfStmt:
-        emit('if (' + emitExpr(n.cond) + ') {');
-        indent++;
-        if (n.thenBranch && n.thenBranch.kind === NK.Block) n.thenBranch.children.forEach(emitStmt);
-        else emitStmt(n.thenBranch);
-        indent--;
-        if (n.elseBranch) {
-          if (n.elseBranch.kind === NK.IfStmt) {
-            // else-if
-            lines.pop(); // remove last closing brace
-            raw(pad() + '} else ' + (function(){ let s=''; const saved=indent; indent=0;
-              // emit the if as a single line via temp
-              const inner = [];
-              const prevLines = lines; lines.length = 0;
-              emitStmt(n.elseBranch);
-              const generated = lines.slice();
-              lines.length = 0; prevLines.push.apply(prevLines, generated);
-              return '';
-            })());
-          } else {
-            emit('} else {');
-            indent++;
-            if (n.elseBranch.kind === NK.Block) n.elseBranch.children.forEach(emitStmt);
-            else emitStmt(n.elseBranch);
-            indent--;
-            emit('}');
-          }
-        } else {
-          emit('}');
-        }
+        emitIfChain(n);
         break;
       case NK.ForStmt: {
         let init = '; ';
@@ -854,3 +863,63 @@ function compile(source, target) {
 }
 
 module.exports = { compile, tokenize, parse, generateJs, TK, NK };
+
+// =============================================================================
+// CLI entrypoint — `node tdscript.js <file.td> [-o out.js] [--target js|cpp]`
+//
+// When invoked directly (not required as a module), compile a single .td file
+// and either write the output to -o PATH or print it to stdout.
+// =============================================================================
+if (require.main === module) {
+  const fs = require('fs');
+  const path = require('path');
+
+  const argv = process.argv.slice(2);
+  if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
+    console.log('Usage: tdscript.js <file.td> [-o out.js] [--target js|cpp]');
+    console.log('       tdscript.js --help');
+    console.log('');
+    console.log('Compiles a .td source file to JavaScript (default) or C++ (stub).');
+    console.log('If -o is omitted, the output is written to stdout.');
+    process.exit(0);
+  }
+
+  let inFile = null;
+  let outFile = null;
+  let target = 'js';
+  for (let i = 0; i < argv.length; i++) {
+    const t = argv[i];
+    if (t === '-o' || t === '--out') {
+      outFile = argv[++i];
+    } else if (t === '--target') {
+      target = argv[++i];
+    } else if (t.startsWith('-')) {
+      console.error('Unknown option: ' + t);
+      process.exit(2);
+    } else {
+      inFile = t;
+    }
+  }
+
+  if (!inFile) {
+    console.error('No input file specified.');
+    process.exit(2);
+  }
+  if (!fs.existsSync(inFile)) {
+    console.error('Input file not found: ' + inFile);
+    process.exit(2);
+  }
+
+  const src = fs.readFileSync(inFile, 'utf8');
+  const result = compile(src, target);
+  if (!result.ok) {
+    console.error(result.error);
+    process.exit(1);
+  }
+  if (outFile) {
+    fs.writeFileSync(outFile, result.code, 'utf8');
+    console.error('Wrote ' + path.resolve(outFile));
+  } else {
+    process.stdout.write(result.code);
+  }
+}

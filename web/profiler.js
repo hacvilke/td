@@ -44,7 +44,7 @@
   }
 
   function heapInfo() {
-    if (typeof memoryUsage === 'function') { // Node
+    if (typeof process !== 'undefined' && typeof process.memoryUsage === 'function') { // Node
       const m = process.memoryUsage();
       return { used: m.heapUsed, total: m.heapTotal, limit: m.heapUsed };
     }

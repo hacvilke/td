@@ -205,18 +205,19 @@ export interface TDBeat {
   /** Best combo since the track started. */
   getBestCombo(entityId: EntityId): number;
 
-  /** Reset combo to 0. */
-  resetCombo(entityId: EntityId): void;
+  /** Reset combo to 0. Returns the previous combo count. */
+  resetCombo(entityId: EntityId): number;
 
   /** Change BPM mid-track. */
   setBpm(entityId: EntityId, bpm: number): void;
 
   /**
-   * Register a JS callback invoked on each beat. Returns a function pointer
-   * you can pass to clearCallback (currently no clear API; the pointer leaks
-   * but it's a no-op after the entity is destroyed).
+   * Register a JS callback invoked on each beat. The C++ side invokes the
+   * callback with (beatCount, beatTime) — beatTime is the wall-clock seconds
+   * at which the beat fired. Returns a function pointer (Emscripten
+   * addFunction) for advanced use; the pointer currently cannot be unregistered.
    */
-  setCallback(cb: (beatCount: number) => void): number;
+  setCallback(cb: (beatCount: number, beatTime: number) => void): number;
 
   /** Play one of the preloaded WAV sounds (indexed by load order). */
   playSound(entityId: EntityId, wavIndex: number): void;
@@ -234,10 +235,11 @@ export interface TDScript {
    * Call a function in the loaded script.
    * @param handle   from load()
    * @param fnName   function name inside the script
-   * @param argsJson JSON array of args, e.g. '["hello", 42]'
+   * @param args     JSON array string ('["hello", 42]') OR a plain JS array
+   *                 (auto-stringified). Defaults to '[]' if omitted.
    * @returns JSON-encoded return value, or "null".
    */
-  call(handle: ScriptHandle, fnName: string, argsJson?: string): string;
+  call(handle: ScriptHandle, fnName: string, args?: string | any[]): string;
 
   /** Free the script handle. */
   unload(handle: ScriptHandle): void;
@@ -248,8 +250,8 @@ export interface TDScript {
 // ---------------------------------------------------------------------------
 
 export interface TDI18n {
-  /** Load a locale's strings from a JSON object: { "key": "translation", ... }. */
-  load(locale: string, json: string): void;
+  /** Load a locale's strings. `json` may be a JSON string OR a plain object. */
+  load(locale: string, json: string | object): void;
 
   /** Switch the active locale. */
   setLocale(locale: string): void;

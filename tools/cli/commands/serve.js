@@ -119,7 +119,12 @@ async function run(args, opts) {
     return 1;
   }
 
-  const port = parseInt(opts.port || '8080', 10);
+  const portRaw = (opts.port === true || opts.port === undefined) ? '8080' : opts.port;
+  const port = parseInt(portRaw, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    err(`Invalid port: ${opts.port}`);
+    return 1;
+  }
   const useReload = opts.reload !== false;
   const open = !!opts.open;
 
@@ -162,8 +167,12 @@ async function run(args, opts) {
       filePath = path.join(gameDir, p);
     }
 
-    // Prevent path traversal.
-    if (filePath.indexOf(gameDir) !== 0 && filePath.indexOf(webDir) !== 0) {
+    // Prevent path traversal — use path-aware check (not substring prefix).
+    const relGame = path.relative(gameDir, filePath);
+    const relWeb = path.relative(webDir, filePath);
+    const outsideGame = relGame.startsWith('..') || path.isAbsolute(relGame);
+    const outsideWeb = relWeb.startsWith('..') || path.isAbsolute(relWeb);
+    if (outsideGame && outsideWeb) {
       res.statusCode = 403;
       res.end('Forbidden');
       return;

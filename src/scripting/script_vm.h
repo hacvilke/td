@@ -22,13 +22,13 @@
 //     language is a multi-month distraction. Lua is 30 years of polish
 //     for free.
 //
-// Status: STUB. The ScriptVM class is declared so the rest of the engine
-// can link against it; the actual Lua embedding is tracked as Tier 1.3
-// in docs/MODULARITY_ROADMAP.md. Until then, loadScript() returns -1
-// (no error message, but no script runs) and update() is a no-op.
-//
-// When the real implementation lands, this header stays the same — only
-// script_vm.cpp changes. Callers don't need to be refactored.
+// Status: REAL implementation. The custom tdscript VM (lexer + parser +
+// codegen + stack-based interpreter, ~3,100 lines) lives in
+// src/scripting/tdscript/. It replaces the originally-planned Lua embedding
+// (Tier 1.3 in docs/MODULARITY_ROADMAP.md is closed). ScriptVM exposes
+// loadScript() / updateAll() / reloadScript() / unloadScript() / bindSignal()
+// against the in-engine tdscript VM, and also supports hot reload via file
+// mtime polling. See src/scripting/tdscript/tdscript.h for the VM internals.
 // =============================================================================
 #pragma once
 #include "../ecs/world.h"

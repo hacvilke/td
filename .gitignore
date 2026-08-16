@@ -1,5 +1,7 @@
 # Build outputs
 build/
+build-desktop/
+build-web/
 bin/
 obj/
 lib/

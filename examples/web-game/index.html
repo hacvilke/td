@@ -63,8 +63,10 @@
         </div>
     </div>
 
-    <!-- Engine runtime (shipped in runtime/ by the bundler) -->
-    <script src="runtime/td-engine.js"></script>
+    <!-- Engine runtime (shipped in runtime/ by the bundler).
+         Load order: js_bridge + td_api first (they define globals only,
+         no Module yet), then game.js calls TDEngine.lifecycle.init()
+         which injects td-engine.js with the right Module config. -->
     <script src="runtime/js_bridge.js"></script>
     <script src="runtime/td_api.js"></script>
 

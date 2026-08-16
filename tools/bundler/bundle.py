@@ -73,6 +73,7 @@ DEFAULT_WEB_DIR = REPO_ROOT / "web"
 DEFAULT_HOST_EXE = REPO_ROOT / "build" / "bin" / "td-host.exe"
 
 # Files that constitute the engine runtime (copied into runtime/ of the bundle)
+# Kept in sync with tools/cli/commands/{build,bundle}.js RUNTIME_FILES lists.
 RUNTIME_FILES = [
     "td-engine.js",   # Emscripten glue (build artifact)
     "td-engine.wasm", # compiled C++ engine (build artifact)
@@ -86,6 +87,10 @@ RUNTIME_FILES = [
     "persistence.js",
     "error_boundary.js",
     "deprecated_tracker.js",
+    "net_interpolation.js",
+    "net_auth_server.js",
+    "tdscript_runtime.js",
+    "td_client_bootstrap.js",
 ]
 
 # Files in the game folder that should NOT be copied into game/
@@ -402,26 +407,29 @@ def main() -> int:
                     help="Don't delete the staging dir after building (for debugging)")
     args = ap.parse_args()
 
-    # ---- Merge with game.tdproj (CLI args win) --------------------------------
-    tdproj = load_tdproj(args.game)
-    name = args.name or tdproj.get("name") or args.game.name
-    version = args.version or tdproj.get("version") or "1.0.0"
-    publisher = args.publisher or tdproj.get("publisher") or "Unknown Publisher"
-    app_id = args.app_id or tdproj.get("id") or slugify(name)
-    icon = args.icon or (Path(tdproj["icon"]) if "icon" in tdproj else None)
-    url = args.url or tdproj.get("url", "")
-    bundle_runtime = args.bundle_runtime or tdproj.get("bundle_runtime", False)
-    bootstrapper = args.webview2_bootstrapper
-
-    if bundle_runtime and not bootstrapper:
-        die("--bundle-runtime requires --webview2-bootstrapper PATH")
-
     # ---- Resolve paths --------------------------------------------------------
     game_dir = args.game.resolve()
     if not game_dir.is_dir():
         die(f"Game folder does not exist: {game_dir}")
     if not (game_dir / "index.html").is_file():
         die(f"Game folder must contain index.html: {game_dir}")
+
+    # ---- Merge with game.tdproj (CLI args win) --------------------------------
+    tdproj = load_tdproj(game_dir)
+    name = args.name or tdproj.get("name") or game_dir.name
+    version = args.version or tdproj.get("version") or "1.0.0"
+    publisher = args.publisher or tdproj.get("publisher") or "Unknown Publisher"
+    app_id = args.app_id or tdproj.get("id") or slugify(name)
+    # Resolve tdproj's icon relative to game_dir (not cwd).
+    icon = args.icon
+    if not icon and "icon" in tdproj:
+        icon = (game_dir / tdproj["icon"]) if not Path(tdproj["icon"]).is_absolute() else Path(tdproj["icon"])
+    url = args.url or tdproj.get("url", "")
+    bundle_runtime = args.bundle_runtime or tdproj.get("bundle_runtime", False)
+    bootstrapper = args.webview2_bootstrapper
+
+    if bundle_runtime and not bootstrapper:
+        die("--bundle-runtime requires --webview2-bootstrapper PATH")
 
     host_exe = args.host_exe.resolve()
     web_dir = args.web_dir.resolve()

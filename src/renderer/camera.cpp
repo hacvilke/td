@@ -126,9 +126,9 @@ void Camera3D::setFOV(float fovDeg) {
     m_fov = clamp(fovDeg, 1.0f, 179.0f);
 }
 
-void Camera3D::setNearFar(float near, float far) {
-    m_near = near;
-    m_far = far;
+void Camera3D::setNearFar(float nearPlane, float farPlane) {
+    m_near = nearPlane;
+    m_far = farPlane;
 }
 
 void Camera3D::updateOrbitAngles() {

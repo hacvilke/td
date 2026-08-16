@@ -34,10 +34,12 @@
   <canvas id="game-canvas"></canvas>
 
   <!-- During dev: `td serve` serves engine files at /engine/.
-       After `td build`: they live in ./runtime/. -->
+       After `td build`: they live in ./runtime/.
+       Load order: js_bridge + td_api define globals; td-engine.js is
+       injected by js_bridge.js at lifecycle.init() time (with the right
+       Module config pre-set), so we do NOT load it as a plain script tag. -->
   <script src="runtime/js_bridge.js"></script>
   <script src="runtime/td_api.js"></script>
-  <script src="runtime/td-engine.js"></script>
   <script src="runtime/tdscript_runtime.js"></script>
   <script src="runtime/td_client_bootstrap.js"></script>
   <script src="game.js"></script>

@@ -19,7 +19,7 @@ const http = require('http');
 const os = require('os');
 const assert = require('assert');
 const { spawn } = require('child_process');
-const WebSocket = require(path.join(__dirname, '..', '..', 'node_modules', 'ws'));
+const WebSocket = require('ws');
 
 let pass = 0, fail = 0;
 function check(name, fn) {

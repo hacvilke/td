@@ -117,10 +117,14 @@ cycle through English → Español → Français.  All HUD labels update instant
       body: `
 <p>TD Engine's persistence layer (<code>web/persistence.js</code>) wraps
 the browser's <code>localStorage</code> (or IndexedDB for larger blobs) in
-a versioned, namespaced API:</p>
-<pre>TDPersistence.save('mygame', 'slot1', { entities, score });
-const state = TDPersistence.load('mygame', 'slot1');
-TDPersistence.listSlots('mygame');</pre>
+a versioned, namespaced API. You register serializers that produce/consume
+plain objects, then <code>save()</code> / <code>load()</code> a named slot:</p>
+<pre>TDPersistence.registerSerializer('mygame',
+  () => ({ entities, score }),              // serialize
+  (data) => { entities = data.entities; score = data.score; });  // deserialize
+TDPersistence.save('mygame');
+const result = TDPersistence.load('mygame');  // { ok, restored, missing, error }
+TDPersistence.list();</pre>
 <p><b>Try it now:</b> spawn some props, then press <code>💾</code> in the
 top bar to save the scene.  Press <code>↺</code> to reset, then <code>📂</code>
 to restore your saved state.</p>`,

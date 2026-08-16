@@ -60,11 +60,14 @@
     error: function (msg) { console.error('[tdscript] ' + msg); },
   };
 
-  // --- Physics (voxel collision stub — real impl in C++ VoxelWorld) --------
+  // --- Physics (voxel collision) ---------------------------------------------
+  // NOTE: the C++ VoxelWorld has getVoxel/setVoxel but it's NOT yet exposed
+  // via a td_voxel_is_solid C export in wasm/emscripten_main.cpp, and is NOT
+  // in EXPORTED_FUNCTIONS. The lookup below will always fall through to the
+  // stub (treat y < 0 as solid ground plane). This is enough for basic
+  // server-authoritative movement validation. When the real bridge lands,
+  // the stub will be replaced automatically.
   const Physics = {
-    // Returns true if the given position is inside a solid voxel.
-    // In the browser this calls into the WASM VoxelWorld via TDEngine.bridge.
-    // In Node (dedicated server) it calls a native binding if available.
     checkVoxelCollision: function (pos) {
       if (global.TDEngine && global.TDEngine.bridge && global.TDEngine.bridge.wasmExports) {
         try {

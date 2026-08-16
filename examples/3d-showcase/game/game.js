@@ -533,7 +533,12 @@
       playerPos: TDE.physics.getPosition(STATE.player.bodyId),
     };
     if (global.TDPersistence && global.TDPersistence.save) {
-      global.TDPersistence.save('td-sandbox', 'autosave', state);
+      // Register a serializer for 'td-sandbox' so save/load round-trips.
+      // (Idempotent: re-registering overwrites the previous serializer.)
+      global.TDPersistence.registerSerializer('td-sandbox',
+        () => state,
+        (data) => { state = data; });
+      global.TDPersistence.save('td-sandbox');
     } else {
       localStorage.setItem('td-sandbox-autosave', JSON.stringify(state));
     }
@@ -542,12 +547,20 @@
   }
 
   function loadScene() {
-    let state;
+    let state = null;
     if (global.TDPersistence && global.TDPersistence.load) {
-      state = global.TDPersistence.load('td-sandbox', 'autosave');
+      // load() returns { ok, restored, missing, error } — restored is an
+      // array of objects produced by each registered serializer (in our
+      // case, just the one we registered in saveScene).
+      const result = global.TDPersistence.load('td-sandbox');
+      if (result && result.ok && result.restored && result.restored.length > 0) {
+        state = result.restored[0];
+      }
     } else {
       const raw = localStorage.getItem('td-sandbox-autosave');
-      if (raw) state = JSON.parse(raw);
+      if (raw) {
+        try { state = JSON.parse(raw); } catch (_) { state = null; }
+      }
     }
     if (!state) { toast('toast.reset'); return; }
     resetScene();

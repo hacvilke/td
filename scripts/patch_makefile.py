@@ -1,8 +1,27 @@
 #!/usr/bin/env python3
-"""Patch the Makefile to add the TDScript compiler test target. Preserves tabs."""
-import sys
+"""Patch the Makefile to add the TDScript compiler test target. Preserves tabs.
 
-MK_PATH = '/home/z/my-project/td-gh/Makefile'
+Resolves the Makefile path relative to this script's location (two directories
+up) so it works on any machine, not just the original author's. Accepts an
+optional --makefile PATH override.
+"""
+import sys
+import os
+from pathlib import Path
+
+# Default: <repo_root>/Makefile (this script lives at <repo_root>/scripts/).
+DEFAULT_MK = Path(__file__).resolve().parents[1] / 'Makefile'
+
+MK_PATH = DEFAULT_MK
+for i, arg in enumerate(sys.argv[1:]):
+    if arg == '--makefile' and i + 2 <= len(sys.argv) - 1:
+        MK_PATH = Path(sys.argv[i + 2])
+        break
+    if arg.startswith('--makefile='):
+        MK_PATH = Path(arg.split('=', 1)[1])
+        break
+
+MK_PATH = MK_PATH.resolve()
 
 with open(MK_PATH, 'r') as f:
     content = f.read()

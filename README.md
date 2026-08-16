@@ -49,7 +49,7 @@ The recommended way is the **modular `TDEngine` API** (v=20+):
 
 ```javascript
 // Boot the engine.
-await TDEngine.init('game-canvas');
+await TDEngine.lifecycle.init('game-canvas');
 
 // Create entities via the ECS subsystem.
 const player = TDEngine.ecs.create('Player');
@@ -71,7 +71,7 @@ conn.rpc.callRemote('getUser', [42], 5000)
 
 // Rhythm games: start a beat tracker.
 TDEngine.beat.start(entityId, 120 /* BPM */, 0.15 /* windowHalfSec */);
-TDEngine.beat.setCallback((beatCount) => console.log('beat #' + beatCount));
+TDEngine.beat.setCallback((beatCount, beatTime) => console.log('beat #' + beatCount + ' at ' + beatTime.toFixed(3) + 's'));
 
 // Localization: load a locale table + look up keys.
 TDEngine.i18n.load('fr', '{"hello":"bonjour"}');
@@ -89,17 +89,24 @@ TDEngine.script.call(handle, 'on_update', '[0.016]');
 |---|---|---|
 | `TDEngine.lifecycle` | init, onReady, shutdown, getVersion, isReady, resize | Boot + lifecycle hooks |
 | `TDEngine.ecs` | create, destroy, isValid, count, setPosition, getPosition, setVelocity, setSprite, setCollider | ECS entity/component management |
-| `TDEngine.input` | isKeyDown, isMouseDown, getMousePos + `Key`/`Mouse` constants | Input polling |
-| `TDEngine.beat` | start, stop, isOnBeat, getCount, registerHit, getCombo, setBpm, setCallback, playSound | Rhythm / beat tracker (13 APIs) |
+| `TDEngine.input` | isKeyDown, isMouseDown, getMousePos + `Key`/`Mouse` constants | Input polling (Win32 VK codes) |
+| `TDEngine.beat` | start, stop, isOnBeat, getCount, getNextBeatTime, getLastBeatTime, registerHit, getCombo, getBestCombo, resetCombo, setCallback, setBpm, playSound | Rhythm / beat tracker (13 APIs) |
 | `TDEngine.script` | load, call, unload | tdscript VM |
 | `TDEngine.i18n` | load, setLocale, t, isRtl | Localization |
 | `TDEngine.audio` | resume, fillBuffer | Audio |
 | `TDEngine.touch` | beginFrame, start, move, end, count, x, y, pinchScale | Multi-touch (8 APIs) |
 | `TDEngine.gamepad` | beginFrame, setConnected, setButton, setAnalog, setAxis, buttonPressed, axis | Gamepad (8 APIs) |
 | `TDEngine.shaderGraph` | compile | Visual shader graph |
-| `TDEngine.net` | Socket, RPC, ServerConfig, connect | WebSocket multiplayer (v=21+) |
+| `TDEngine.physics` | init, shutdown, step, addBody, removeBody, setSphereCollider, setBoxCollider, setCapsuleCollider, setPosition, setVelocity, getPosition, getVelocity, getOrientation, applyForce, applyImpulse, applyTorque, setRestitution, setFriction, setGravityScale, setUseGravity, addDistanceConstraint, addHingeConstraint, raycast, contactCount, bodyCount | 3D physics (25 APIs) |
+| `TDEngine.net` | Socket, RPC, ServerConfig, connect | WebSocket multiplayer (v=21+). Requires `net_websocket.js` loaded after `td_api.js`. |
 | `TDEngine.deprecated` | warn, getRegistry, subscribe, classifyDeprecated | Deprecated API tracking (v=19+) |
 | `TDEngine.server` | getCurrentServerUrl, saveServerUrl, resolveAsset, probeServer | Self-host the engine on your own VPN (v=18+) |
+| `TDPersistence` | registerSerializer, save, load, list | Save/load with game-registered serializers |
+| `TDInspector` | mount | Live ECS entity browser (mount in your dev UI) |
+| `TDProfiler` | mount | Frame-time graph + counters + heap meter |
+| `TDErrorBoundary` | install | Friendly crash card with stack trace |
+| `TDScriptRuntime` | (auto-loaded by `tdscript_runtime.js`) | Compiled TDScript server-side runtime |
+| `TDClientBootstrap` | bootstrap | Auto-connect to the project's game-net server |
 
 The legacy `TDBridge` global still works for backwards compatibility —
 direct access logs a one-time deprecation warning pointing users to the

@@ -1,4 +1,5 @@
 #include "game_loop.h"
+#include "../platform/win32_window.h"  // Win32Window definition for run()
 
 namespace td {
 

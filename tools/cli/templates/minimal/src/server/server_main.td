@@ -15,6 +15,7 @@
 
 import "engine/networking";
 import "engine/physics";
+import "engine/log";
 
 // Player input struct — sent from client to server each tick.
 struct PlayerInputState {
@@ -76,6 +77,6 @@ class ServerMain {
     private void triggerClientCorrection(Vector3 position, uint32 clientTick) {
         // The replicated setter on playerPosition will broadcast the correction
         // automatically; this method exists for logging / future extension.
-        Log.info("Correcting client tick " + clientTick.toString());
+        Log.info("Correcting client tick");
     }
 }

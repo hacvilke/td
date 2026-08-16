@@ -42,7 +42,9 @@
 
 // --- Engine headers (Parts 1-6, unchanged) -----------------------------------
 #include "../src/platform/platform.h"      // InputState, Key::, Mouse::
-#include "../src/core/game_loop.h"
+// Note: game_loop.h is NOT included here — GameLoop::run(Win32Window&) is
+// desktop-only. The WASM main loop is implemented locally at mainLoop() below
+// using the same fixed-step accumulator algorithm.
 #include "../src/core/logger.h"
 #include "../src/renderer/gl_renderer.h"   // td::Renderer, td::gl
 #include "../src/renderer/sprite_batch.h"
